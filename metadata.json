@@ -1,0 +1,6 @@
+{
+  "name": "RVH Marketing Studio",
+  "description": "Marketing and content operations studio for Rohit Veterinary House with AI content generation, video maker, WhatsApp and Facebook campaign management, and content calendar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

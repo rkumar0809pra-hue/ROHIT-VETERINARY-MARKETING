@@ -1,0 +1,54 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center badge / circle -->
+    <path
+        android:fillColor="#115E59"
+        android:pathData="M54,23 A31,31 0 1,0 54,85 A31,31 0 1,0 54,23 Z" />
+
+    <!-- Veterinary Cross base -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M50,32 h8 v14 h14 v8 h-14 v14 h-8 v-14 h-14 v-8 h14 z" />
+
+    <!-- Central Paw Pad & Marketing Spark -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,49 C51,49 49,52 49,55 C49,58 51.5,60 54,60 C56.5,60 59,58 59,55 C59,52 57,49 54,49 Z" />
+
+    <!-- Paw Toes -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,45 C46.5,45 45.5,46.5 45.5,48 C45.5,49.5 46.5,50.5 48,50.5 C49.5,50.5 50.5,49.5 50.5,48 C50.5,46.5 49.5,45 48,45 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,45 C58.5,45 57.5,46.5 57.5,48 C57.5,49.5 58.5,50.5 60,50.5 C61.5,50.5 62.5,49.5 62.5,48 C62.5,46.5 61.5,45 60,45 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51.5,41 C50.5,41 49.5,42 49.5,43.5 C49.5,45 50.5,46 51.5,46 C52.5,46 53.5,45 53.5,43.5 C53.5,42 52.5,41 51.5,41 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56.5,41 C55.5,41 54.5,42 54.5,43.5 C54.5,45 55.5,46 56.5,46 C57.5,46 58.5,45 58.5,43.5 C58.5,42 57.5,41 56.5,41 Z" />
+
+    <!-- Marketing Broadcast / Megaphone Soundwave Accents -->
+    <path
+        android:strokeColor="#34D399"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M73,43 C77,47 77,59 73,63" />
+    <path
+        android:strokeColor="#A7F3D0"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M78,38 C84,45 84,61 78,68" />
+    <path
+        android:strokeColor="#34D399"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M35,43 C31,47 31,59 35,63" />
+</vector>
