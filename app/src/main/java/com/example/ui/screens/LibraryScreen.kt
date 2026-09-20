@@ -95,6 +95,9 @@ fun LibraryScreen(
     var selectedPlatformFilter by remember { mutableStateOf("ALL") }
     var selectedLanguageFilter by remember { mutableStateOf("ALL") }
     var selectedSortOption by remember { mutableStateOf("NEWEST") }
+    var selectedPostId by remember { mutableStateOf<Long?>(null) }
+    val previewMode by viewModel.previewDeviceMode.collectAsState()
+    val layoutInfo = com.example.ui.util.rememberScreenLayoutInfo(previewMode)
 
     // Dialog state for Rejection reason
     var postToReject by remember { mutableStateOf<MarketingPost?>(null) }
@@ -127,11 +130,13 @@ fun LibraryScreen(
         }
     }
 
+    val selectedPost = sortedPosts.firstOrNull { it.id == selectedPostId } ?: sortedPosts.firstOrNull()
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .testTag("library_screen"),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
@@ -187,7 +192,7 @@ fun LibraryScreen(
                     FilterChip(
                         selected = selectedStatusFilter == statusKey,
                         onClick = { selectedStatusFilter = statusKey },
-                        label = { Text(label, fontSize = 11.sp) }
+                        label = { Text(label, fontSize = 11.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }
@@ -199,31 +204,41 @@ fun LibraryScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Language row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Language: ", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VetTeal)
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Language:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             listOf("ALL" to "All", "Hinglish" to "Hinglish", "Hindi" to "Hindi", "English" to "English").forEach { (langKey, label) ->
                                 FilterChip(
                                     selected = selectedLanguageFilter == langKey,
                                     onClick = { selectedLanguageFilter = langKey },
-                                    label = { Text(label, fontSize = 10.sp) }
+                                    label = { Text(label, fontSize = 10.sp, maxLines = 1, softWrap = false) }
                                 )
                             }
                         }
                     }
 
                     // Sort row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Sort By: ", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = VetTeal)
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Sort By:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             listOf(
                                 "NEWEST" to "Newest",
                                 "OLDEST" to "Oldest",
@@ -233,7 +248,7 @@ fun LibraryScreen(
                                 FilterChip(
                                     selected = selectedSortOption == sortKey,
                                     onClick = { selectedSortOption = sortKey },
-                                    label = { Text(label, fontSize = 10.sp) }
+                                    label = { Text(label, fontSize = 10.sp, maxLines = 1, softWrap = false) }
                                 )
                             }
                         }
@@ -271,7 +286,52 @@ fun LibraryScreen(
                     }
                 }
             }
+        } else if (layoutInfo.isExpanded) {
+            // Desktop Two-Pane Master-Detail Layout (List on left, preview detail on right)
+            item {
+                com.example.ui.components.ResponsiveTwoPaneLayout(
+                    isWideScreen = true,
+                    primaryWeight = 0.45f,
+                    secondaryWeight = 0.55f,
+                    primaryPane = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            sortedPosts.forEach { post ->
+                                LibraryPostListItem(
+                                    post = post,
+                                    isSelected = post.id == selectedPost?.id,
+                                    onClick = { selectedPostId = post.id },
+                                    onCopy = { copyToClipboard(context, "${post.contentText}\n\n${post.hashtags}") }
+                                )
+                            }
+                        }
+                    },
+                    secondaryPane = {
+                        LibraryPostDetailPanel(
+                            post = selectedPost,
+                            currentRole = currentRole,
+                            viewModel = viewModel,
+                            context = context,
+                            onApprove = { viewModel.approvePost(it.id) },
+                            onRejectPrompt = {
+                                postToReject = it
+                                rejectReasonText = ""
+                            },
+                            onSchedulePrompt = { postToSchedule = it },
+                            onPublish = { viewModel.publishPost(it.id, context) },
+                            onDuplicate = {
+                                viewModel.duplicatePost(it)
+                                Toast.makeText(context, "Duplicated as new Draft!", Toast.LENGTH_SHORT).show()
+                            },
+                            onDelete = {
+                                viewModel.deletePost(it.id)
+                                Toast.makeText(context, "Post deleted", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                )
+            }
         } else {
+            // Mobile and Tablet single list with expandable cards
             items(sortedPosts) { post ->
                 LibraryPostItemCard(
                     post = post,

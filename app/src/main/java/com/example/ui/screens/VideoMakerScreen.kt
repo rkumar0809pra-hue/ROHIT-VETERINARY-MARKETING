@@ -101,10 +101,13 @@ import com.example.data.model.ContentLanguage
 import com.example.data.model.GeneratedVeoVideo
 import com.example.data.model.PostStatus
 import com.example.data.model.UserRole
+import com.example.ui.components.ResponsiveContentContainer
+import com.example.ui.components.ResponsiveTwoPaneLayout
 import com.example.ui.theme.VetAmber
 import com.example.ui.theme.VetBlue
 import com.example.ui.theme.VetTeal
 import com.example.ui.theme.VetTealContainer
+import com.example.ui.util.rememberScreenLayoutInfo
 import com.example.ui.viewmodel.MarketingViewModel
 import kotlinx.coroutines.delay
 import org.json.JSONArray
@@ -127,59 +130,61 @@ fun VideoMakerScreen(
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("video_maker_screen")
-    ) {
-        // Top Tab Navigation Bar
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = VetTeal
+    ResponsiveContentContainer(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("video_maker_screen")
         ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Outlined.Videocam, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Veo 3 Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                modifier = Modifier.testTag("tab_veo_text_to_video")
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Animate Photo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                modifier = Modifier.testTag("tab_veo_animate_photo")
-            )
-            Tab(
-                selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Outlined.Movie, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Script Writer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                modifier = Modifier.testTag("tab_storyboard_script")
-            )
-        }
+            // Top Tab Navigation Bar
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = VetTeal
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Outlined.Videocam, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Veo 3 Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    },
+                    modifier = Modifier.testTag("tab_veo_text_to_video")
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Animate Photo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    },
+                    modifier = Modifier.testTag("tab_veo_animate_photo")
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Outlined.Movie, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Script Writer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    },
+                    modifier = Modifier.testTag("tab_storyboard_script")
+                )
+            }
 
-        when (selectedTab) {
-            0 -> VeoTextToVideoTab(viewModel = viewModel)
-            1 -> VeoAnimatePhotoTab(viewModel = viewModel)
-            2 -> StoryboardScriptTab(viewModel = viewModel)
+            when (selectedTab) {
+                0 -> VeoTextToVideoTab(viewModel = viewModel)
+                1 -> VeoAnimatePhotoTab(viewModel = viewModel)
+                2 -> StoryboardScriptTab(viewModel = viewModel)
+            }
         }
     }
 }

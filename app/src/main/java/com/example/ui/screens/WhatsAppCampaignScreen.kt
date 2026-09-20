@@ -67,6 +67,8 @@ import com.example.data.model.AudienceType
 import com.example.data.model.PostStatus
 import com.example.data.model.UserRole
 import com.example.data.model.WhatsAppCampaign
+import com.example.ui.components.ResponsiveContentContainer
+import com.example.ui.components.ResponsiveTwoPaneLayout
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.StatusApproved
 import com.example.ui.theme.StatusScheduled
@@ -74,6 +76,7 @@ import com.example.ui.theme.VetAmber
 import com.example.ui.theme.VetTeal
 import com.example.ui.theme.WhatsAppDark
 import com.example.ui.theme.WhatsAppGreen
+import com.example.ui.util.rememberScreenLayoutInfo
 import com.example.ui.viewmodel.MarketingViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -117,13 +120,348 @@ fun WhatsAppCampaignScreen(
         }
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("whatsapp_campaign_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    val previewMode by viewModel.previewDeviceMode.collectAsState()
+    val layoutInfo = rememberScreenLayoutInfo(previewMode)
+
+    ResponsiveContentContainer(modifier = modifier) {
+        if (layoutInfo.isExpanded) {
+            ResponsiveTwoPaneLayout(
+                isWideScreen = true,
+                primaryWeight = 0.48f,
+                secondaryWeight = 0.52f,
+                primaryPane = {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("whatsapp_campaign_left_pane"),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Column {
+                                Text(
+                                    text = "WhatsApp Campaigns & Broadcast",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Target specific customer groups with personalized templates and immediate WhatsApp action",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Audience Segments Card
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Customer Groups & Audience Segments",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Target specific animal owners with high-converting messages",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        AudienceSegmentBadge(
+                                            title = "Cattle Dairy",
+                                            count = "240 Farmers",
+                                            color = Color(0xFF0D9488),
+                                            isSelected = selectedGroup == AudienceType.CATTLE_OWNERS.name,
+                                            onClick = { selectedGroup = AudienceType.CATTLE_OWNERS.name },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        AudienceSegmentBadge(
+                                            title = "Pet Parents",
+                                            count = "110 Owners",
+                                            color = Color(0xFF0284C7),
+                                            isSelected = selectedGroup == AudienceType.PET_OWNERS.name,
+                                            onClick = { selectedGroup = AudienceType.PET_OWNERS.name },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        AudienceSegmentBadge(
+                                            title = "Goat Farming",
+                                            count = "75 Herders",
+                                            color = Color(0xFFD97706),
+                                            isSelected = selectedGroup == AudienceType.GOAT_FARMERS.name,
+                                            onClick = { selectedGroup = AudienceType.GOAT_FARMERS.name },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Creator Form Panel on Left
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = "Create WhatsApp Broadcast Campaign",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = WhatsAppDark
+                                    )
+
+                                    // Campaign Name
+                                    OutlinedTextField(
+                                        value = campaignName,
+                                        onValueChange = { campaignName = it },
+                                        label = { Text("Campaign Name") },
+                                        placeholder = { Text("e.g. Cattle Summer Booster Drive") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+
+                                    // Target Audience Group
+                                    Text(
+                                        text = "Target Customer Group",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        AudienceType.values().forEach { group ->
+                                            FilterChip(
+                                                selected = selectedGroup == group.name,
+                                                onClick = { selectedGroup = group.name },
+                                                label = { Text(group.label, fontSize = 11.sp) }
+                                            )
+                                        }
+                                    }
+
+                                    // Template Message
+                                    Text(
+                                        text = "Message Template",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    OutlinedTextField(
+                                        value = templateBody,
+                                        onValueChange = { templateBody = it },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(120.dp),
+                                        placeholder = { Text("Enter WhatsApp message template with {{Variables}}") }
+                                    )
+
+                                    // Variable Pills
+                                    Text(
+                                        text = "Tap to insert variable token:",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        listOf("{{CustomerName}}", "{{AnimalType}}", "{{ClinicPhone}}", "{{SpecialOffer}}").forEach { token ->
+                                            Surface(
+                                                onClick = { templateBody = "$templateBody $token" },
+                                                color = Color(0xFFDCFCE7),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = token,
+                                                    fontSize = 11.sp,
+                                                    color = WhatsAppDark,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // CTA Button Type
+                                    Text(
+                                        text = "Action Button (CTA)",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf("Call Now", "WhatsApp Now", "Book Consultation", "Order Product").forEach { cta ->
+                                            FilterChip(
+                                                selected = ctaType == cta,
+                                                onClick = { ctaType = cta },
+                                                label = { Text(cta, fontSize = 11.sp) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // Submit Buttons
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                if (campaignName.isNotBlank()) {
+                                                    viewModel.saveNewCampaign(campaignName, selectedGroup, templateBody, ctaType, ctaValue)
+                                                    campaignName = ""
+                                                    Toast.makeText(context, "Campaign saved as Draft!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Save Draft")
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                if (campaignName.isNotBlank()) {
+                                                    val scheduledTime = System.currentTimeMillis() + (86400000L * 2)
+                                                    viewModel.saveNewCampaign(campaignName, selectedGroup, templateBody, ctaType, ctaValue, scheduledTime)
+                                                    campaignName = ""
+                                                    Toast.makeText(context, "Campaign scheduled for upcoming broadcast!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = WhatsAppDark),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Schedule")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                secondaryPane = {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("whatsapp_campaign_right_pane"),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Live Phone Preview Card on Right
+                        item {
+                            Text(
+                                text = "WhatsApp Live Template Preview (Client's Screen)",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = WhatsAppDark
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            WhatsAppLivePreviewCard(
+                                previewText = previewText,
+                                ctaType = ctaType,
+                                ctaValue = ctaValue
+                            )
+                        }
+
+                        // Broadcast History & Active Campaigns List
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Campaign Broadcasts & History",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${filteredCampaigns.size} Campaigns",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Status Filter Chips
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    "ALL" to "All Status",
+                                    "DRAFT" to "Drafts",
+                                    "SCHEDULED" to "Scheduled",
+                                    "PUBLISHED" to "Sent Broadcasts"
+                                ).forEach { (filterKey, label) ->
+                                    val isSelected = selectedStatusFilter == filterKey
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { selectedStatusFilter = filterKey },
+                                        label = { Text(label, fontSize = 12.sp) }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (filteredCampaigns.isEmpty()) {
+                            item {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(24.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "No campaigns found matching '$selectedStatusFilter'.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            items(filteredCampaigns) { campaign ->
+                                WhatsAppCampaignCard(
+                                    campaign = campaign,
+                                    currentRole = currentRole,
+                                    onApprove = { viewModel.approveCampaign(campaign) },
+                                    onSend = { viewModel.launchWhatsAppCampaign(campaign, context) }
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("whatsapp_campaign_screen"),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -446,6 +784,8 @@ fun WhatsAppCampaignScreen(
             }
         }
     }
+    }
+}
 }
 
 @Composable

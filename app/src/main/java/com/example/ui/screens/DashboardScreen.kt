@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -130,7 +132,7 @@ fun DashboardScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("dashboard_screen"),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Business Header Hero
@@ -152,7 +154,9 @@ fun DashboardScreen(
         // Quick Channel Filters
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -160,22 +164,28 @@ fun DashboardScreen(
                     text = "Filter:",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 listOf("ALL" to "All Channels", "WhatsApp" to "WhatsApp", "Facebook" to "Facebook", "Video" to "Video").forEach { (key, label) ->
                     val isSelected = selectedChannelFilter == key
                     Surface(
                         onClick = { selectedChannelFilter = key },
                         shape = RoundedCornerShape(20.dp),
-                        color = if (isSelected) VetTeal else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.height(32.dp)
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.height(34.dp)
                     ) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier.padding(horizontal = 12.dp)
                         ) {
-                            Text(text = label, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -198,7 +208,7 @@ fun DashboardScreen(
                 Text(
                     text = "Role: ${currentRole.label}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = VetTeal,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -446,7 +456,7 @@ fun DashboardScreen(
                 )
                 Text(
                     text = "View All Library",
-                    color = VetTeal,
+                    color = MaterialTheme.colorScheme.primary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
@@ -903,7 +913,7 @@ fun DashboardScreenPreview() {
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("dashboard_screen_preview"),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -916,7 +926,9 @@ fun DashboardScreenPreview() {
 
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -924,22 +936,28 @@ fun DashboardScreenPreview() {
                         text = "Filter:",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     listOf("ALL" to "All Channels", "WhatsApp" to "WhatsApp", "Facebook" to "Facebook", "Video" to "Video").forEach { (key, label) ->
                         val isSelected = selectedChannelFilter == key
                         Surface(
                             onClick = { selectedChannelFilter = key },
                             shape = RoundedCornerShape(20.dp),
-                            color = if (isSelected) VetTeal else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.height(32.dp)
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.height(34.dp)
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier.padding(horizontal = 12.dp)
                             ) {
-                                Text(text = label, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
                             }
                         }
                     }
@@ -961,7 +979,7 @@ fun DashboardScreenPreview() {
                     Text(
                         text = "Role: Clinic Admin",
                         style = MaterialTheme.typography.bodySmall,
-                        color = VetTeal,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1171,7 +1189,7 @@ fun DashboardScreenPreview() {
                     )
                     Text(
                         text = "View All Library",
-                        color = VetTeal,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(4.dp)

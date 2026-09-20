@@ -9,6 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.SampleDataProvider
 import com.example.data.gemini.GeneratedContentBundle
 import com.example.data.gemini.GeneratedVideoScriptBundle
+import com.example.data.gemini.MarketingPostIdea
+import com.example.data.gemini.SocialMediaCaption
+import com.example.data.gemini.ThemeMarketingResult
 import com.example.data.gemini.VeoVideoResult
 import com.example.data.model.AudienceType
 import com.example.data.model.ChatMessage
@@ -77,6 +80,13 @@ class MarketingViewModel(
         _currentRole.value = role
     }
 
+    // Responsive Preview Device Simulation Mode (AUTO, MOBILE_PREVIEW, TABLET_PREVIEW, DESKTOP_PREVIEW)
+    // Allows preview-friendly testing inside the Google AI Studio emulator
+    val previewDeviceMode = MutableStateFlow("AUTO") // "AUTO", "MOBILE", "TABLET", "DESKTOP"
+    fun setPreviewDeviceMode(mode: String) {
+        previewDeviceMode.value = mode
+    }
+
     // Data streams from Room with instant sample initial values
     val allPosts: StateFlow<List<MarketingPost>> = repository.allPosts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SampleDataProvider.getSamplePosts())
@@ -129,6 +139,107 @@ class MarketingViewModel(
             publishRatePercent = publishRate
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SampleDataProvider.getInitialMetrics())
+
+    // --- Theme Marketing State (Captions & Post Ideas) ---
+    val themeInput = MutableStateFlow("Monsoon Foot Rot & Tick Prevention")
+    val themeAudience = MutableStateFlow(AudienceType.CATTLE_OWNERS.name)
+    val themePlatform = MutableStateFlow(Platform.FACEBOOK.name)
+    val themeTone = MutableStateFlow(ContentTone.EDUCATIONAL.name)
+    val themeLanguage = MutableStateFlow(ContentLanguage.HINGLISH.name)
+
+    private val _isGeneratingTheme = MutableStateFlow(false)
+    val isGeneratingTheme: StateFlow<Boolean> = _isGeneratingTheme.asStateFlow()
+
+    private val _themeResult = MutableStateFlow<ThemeMarketingResult?>(null)
+    val themeResult: StateFlow<ThemeMarketingResult?> = _themeResult.asStateFlow()
+
+    private val _themeStatusMessage = MutableStateFlow<String?>(null)
+    val themeStatusMessage: StateFlow<String?> = _themeStatusMessage.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            try {
+                _themeResult.value = repository.generateThemeCaptionsAndPostIdeas(
+                    theme = themeInput.value,
+                    audience = themeAudience.value,
+                    platform = themePlatform.value,
+                    language = themeLanguage.value,
+                    tone = themeTone.value
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun generateThemeCaptionsAndPostIdeas() {
+        val theme = themeInput.value.trim()
+        if (theme.isBlank()) {
+            _themeStatusMessage.value = "Please enter a theme or topic."
+            return
+        }
+        viewModelScope.launch {
+            _isGeneratingTheme.value = true
+            _themeStatusMessage.value = "Generating captions & marketing post ideas with Gemini..."
+            try {
+                val result = repository.generateThemeCaptionsAndPostIdeas(
+                    theme = theme,
+                    audience = themeAudience.value,
+                    platform = themePlatform.value,
+                    language = themeLanguage.value,
+                    tone = themeTone.value
+                )
+                _themeResult.value = result
+                _themeStatusMessage.value = "Generated ${result.captions.size} captions and ${result.postIdeas.size} post ideas!"
+            } catch (e: Exception) {
+                _themeStatusMessage.value = "Generation failed: ${e.message}"
+            } finally {
+                _isGeneratingTheme.value = false
+            }
+        }
+    }
+
+    fun saveCaptionAsPost(caption: SocialMediaCaption, status: PostStatus = PostStatus.DRAFT) {
+        viewModelScope.launch {
+            val post = MarketingPost(
+                title = "${themeInput.value} (${caption.style})",
+                platform = caption.recommendedPlatform,
+                contentType = "Caption Post",
+                category = ContentCategory.SEASONAL.name,
+                audience = themeAudience.value,
+                serviceOrProduct = themeInput.value,
+                tone = themeTone.value,
+                language = themeLanguage.value,
+                ctaText = caption.callToAction,
+                status = status.name,
+                contentText = caption.captionText,
+                hashtags = caption.hashtags.joinToString(" "),
+                authorRole = _currentRole.value.name
+            )
+            repository.savePost(post)
+            _themeStatusMessage.value = "Caption saved to Library as ${status.label}!"
+        }
+    }
+
+    fun savePostIdeaAsPost(idea: MarketingPostIdea, status: PostStatus = PostStatus.DRAFT) {
+        viewModelScope.launch {
+            val post = MarketingPost(
+                title = idea.title,
+                platform = themePlatform.value,
+                contentType = idea.format,
+                category = ContentCategory.SEASONAL.name,
+                audience = idea.targetAudience,
+                serviceOrProduct = themeInput.value,
+                tone = idea.angle,
+                language = themeLanguage.value,
+                ctaText = idea.callToAction,
+                status = status.name,
+                contentText = "Angle: ${idea.angle}\n\nKey Takeaway: ${idea.keyTakeaway}\n\nBest Time: ${idea.bestTimeToPost}\n\nCreative Prompt: ${idea.visualCreativePrompt}",
+                imagePrompt = idea.visualCreativePrompt,
+                authorRole = _currentRole.value.name
+            )
+            repository.savePost(post)
+            _themeStatusMessage.value = "Post Idea saved to Library as ${status.label}!"
+        }
+    }
 
     // --- Content Creator State ---
     val creatorPlatform = MutableStateFlow(Platform.WHATSAPP.name)

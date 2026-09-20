@@ -3,7 +3,11 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
+import com.example.data.gemini.MarketingPostIdea
+import com.example.data.gemini.SocialMediaCaption
+import com.example.data.gemini.ThemeMarketingResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,6 +82,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AudienceType
@@ -116,7 +121,17 @@ fun ContentCreatorScreen(
     var selectedResultTab by remember { mutableIntStateOf(0) }
     val resultTabs = listOf("Primary Post", "Short / SMS", "Long Version", "3 Alternates", "Hashtags & Prompts")
 
-    var creatorModeTab by remember { mutableIntStateOf(0) } // 0: AI Generator, 1: Facebook Builder
+    val themeInput by viewModel.themeInput.collectAsState()
+    val themeAudience by viewModel.themeAudience.collectAsState()
+    val themePlatform by viewModel.themePlatform.collectAsState()
+    val themeTone by viewModel.themeTone.collectAsState()
+    val themeLanguage by viewModel.themeLanguage.collectAsState()
+    val isGeneratingTheme by viewModel.isGeneratingTheme.collectAsState()
+    val themeResult by viewModel.themeResult.collectAsState()
+    val themeStatusMessage by viewModel.themeStatusMessage.collectAsState()
+    var themeResultSubTab by remember { mutableIntStateOf(0) } // 0: Captions, 1: Post Ideas
+
+    var creatorModeTab by remember { mutableIntStateOf(0) } // 0: Theme Studio, 1: AI Copy Generator, 2: Facebook Builder
     val fbHeadline by viewModel.fbHeadline.collectAsState()
     val fbCaption by viewModel.fbCaption.collectAsState()
     val fbCta by viewModel.fbCta.collectAsState()
@@ -143,21 +158,26 @@ fun ContentCreatorScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("content_creator_screen"),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Text(
-                text = if (creatorModeTab == 0) "AI Content Creator" else "Facebook Post Builder",
+                text = when (creatorModeTab) {
+                    0 -> "Veterinary Content Generator"
+                    1 -> "Theme Marketing Studio"
+                    else -> "Facebook Post Builder"
+                },
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = if (creatorModeTab == 0)
-                    "Generate professional, veterinary-compliant copy for WhatsApp, Facebook, and Ads in Hindi, Hinglish, or English."
-                else
-                    "Structured Facebook campaign builder with realistic news feed preview and WhatsApp CTAs.",
+                text = when (creatorModeTab) {
+                    0 -> "Generate platform-ready social posts and marketing copy for veterinary medicines, vaccines, and supplements using Gemini AI."
+                    1 -> "Generate multi-post campaign themes, captions, and creative post concepts for Rohit Veterinary House."
+                    else -> "Structured Facebook campaign builder with realistic news feed preview and WhatsApp CTAs."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -174,410 +194,99 @@ fun ContentCreatorScreen(
                 Tab(
                     selected = creatorModeTab == 0,
                     onClick = { creatorModeTab = 0 },
-                    text = { Text("AI Copy Generator", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                    text = { Text("Content Generator", fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
                 )
                 Tab(
                     selected = creatorModeTab == 1,
                     onClick = { creatorModeTab = 1 },
-                    text = { Text("Facebook Post Builder", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                    text = { Text("Theme Studio", fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
+                )
+                Tab(
+                    selected = creatorModeTab == 2,
+                    onClick = { creatorModeTab = 2 },
+                    text = { Text("FB Builder", fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
                 )
             }
         }
 
         if (creatorModeTab == 0) {
-            // Form Card
+            // --- VETERINARY CONTENT GENERATOR: Social Posts & Marketing Copy ---
             item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    // 1. Platform Selector
-                    Text(
-                        text = "1. Target Platform",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Platform.values().forEach { p ->
-                            FilterChip(
-                                selected = platform == p.name,
-                                onClick = { viewModel.creatorPlatform.value = p.name },
-                                label = { Text(p.label, fontSize = 12.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                com.example.ui.components.ResponsiveContentContainer {
+                    val previewMode = viewModel.previewDeviceMode.collectAsState().value
+                    val layoutInfo = com.example.ui.util.rememberScreenLayoutInfo(previewMode)
 
-                    // 2. Campaign Goal
-                    Text(
-                        text = "2. Campaign Goal",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        ContentCategory.values().forEach { c ->
-                            FilterChip(
-                                selected = goal == c.name,
-                                onClick = { viewModel.creatorGoal.value = c.name },
-                                label = { Text(c.label, fontSize = 11.sp) }
-                            )
-                        }
-                    }
-
-                    // 3. Target Audience
-                    Text(
-                        text = "3. Target Audience",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        AudienceType.values().forEach { a ->
-                            FilterChip(
-                                selected = audience == a.name,
-                                onClick = { viewModel.creatorAudience.value = a.name },
-                                label = { Text(a.label, fontSize = 11.sp) }
-                            )
-                        }
-                    }
-
-                    // 4. Service or Product
-                    Text(
-                        text = "4. Service / Product / Offer",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    OutlinedTextField(
-                        value = service,
-                        onValueChange = { viewModel.creatorService.value = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("service_product_input"),
-                        placeholder = { Text("e.g. Chelated Mineral Mixture, Puppy Vaccination Camp, Deworming") },
-                        singleLine = true
-                    )
-
-                    // Quick suggestions for service
-                    Text(
-                        text = "Quick Suggest:",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        listOf(
-                            "Anti-Rabies Shot",
-                            "Chelated Mineral Mix",
-                            "Puppy Deworming",
-                            "Mastitis Teat Dip",
-                            "Goat ET Vaccine",
-                            "Heat Stress Electrolytes"
-                        ).forEach { suggestion ->
-                            Surface(
-                                onClick = { viewModel.creatorService.value = suggestion },
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.padding(2.dp)
-                            ) {
-                                Text(
-                                    text = suggestion,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (layoutInfo.isExpanded) {
+                        com.example.ui.components.ResponsiveTwoPaneLayout(
+                            isWideScreen = true,
+                            primaryWeight = 0.46f,
+                            secondaryWeight = 0.54f,
+                            primaryPane = {
+                                ContentGeneratorFormPanel(viewModel = viewModel)
+                            },
+                            secondaryPane = {
+                                ContentGeneratorResultsPanel(
+                                    viewModel = viewModel,
+                                    generatedBundle = generatedBundle,
+                                    statusMessage = statusMessage,
+                                    context = context,
+                                    currentRole = currentRole
                                 )
                             }
-                        }
-                    }
-
-                    // 5. Tone & Language Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "5. Tone",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            ContentGeneratorFormPanel(viewModel = viewModel)
+                            ContentGeneratorResultsPanel(
+                                viewModel = viewModel,
+                                generatedBundle = generatedBundle,
+                                statusMessage = statusMessage,
+                                context = context,
+                                currentRole = currentRole
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            var toneExpanded by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
-                                expanded = toneExpanded,
-                                onExpandedChange = { toneExpanded = !toneExpanded }
-                            ) {
-                                OutlinedTextField(
-                                    value = ContentTone.valueOf(tone).label,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = toneExpanded) },
-                                    modifier = Modifier
-                                        .menuAnchor()
-                                        .fillMaxWidth()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = toneExpanded,
-                                    onDismissRequest = { toneExpanded = false }
-                                ) {
-                                    ContentTone.values().forEach { t ->
-                                        DropdownMenuItem(
-                                            text = { Text(t.label) },
-                                            onClick = {
-                                                viewModel.creatorTone.value = t.name
-                                                toneExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "6. Language",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            var langExpanded by remember { mutableStateOf(false) }
-                            ExposedDropdownMenuBox(
-                                expanded = langExpanded,
-                                onExpandedChange = { langExpanded = !langExpanded }
-                            ) {
-                                OutlinedTextField(
-                                    value = ContentLanguage.valueOf(language).label,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = langExpanded) },
-                                    modifier = Modifier
-                                        .menuAnchor()
-                                        .fillMaxWidth()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = langExpanded,
-                                    onDismissRequest = { langExpanded = false }
-                                ) {
-                                    ContentLanguage.values().forEach { l ->
-                                        DropdownMenuItem(
-                                            text = { Text(l.label) },
-                                            onClick = {
-                                                viewModel.creatorLanguage.value = l.name
-                                                langExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 7. Call To Action (CTA)
-                    Text(
-                        text = "7. Call To Action (CTA)",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf("Call Now", "WhatsApp Now", "Book Consultation", "Order Product").forEach { ctaItem ->
-                            FilterChip(
-                                selected = cta == ctaItem,
-                                onClick = { viewModel.creatorCta.value = ctaItem },
-                                label = { Text(ctaItem, fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Generate Button
-                    Button(
-                        onClick = { viewModel.generateMarketingContent() },
-                        enabled = !isGenerating && service.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = VetTeal),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("generate_content_button")
-                    ) {
-                        if (isGenerating) {
-                            CircularProgressIndicator(
-                                color = Color.White,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Generating AI Content...")
-                        } else {
-                            Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Generate Marketing Content", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
-        }
-
-        // Status notification
-        if (statusMessage != null) {
+        } else if (creatorModeTab == 1) {
+            // --- THEME STUDIO: User-Provided Themes -> Captions & Post Ideas ---
+            // Responsive: Two-column on Desktop (left form, right preview & results), single-column stacked on Mobile
             item {
-                Surface(
-                    color = VetTeal.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = statusMessage ?: "",
-                        color = VetTeal,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
-        }
+                com.example.ui.components.ResponsiveContentContainer {
+                    val previewMode = viewModel.previewDeviceMode.collectAsState().value
+                    val layoutInfo = com.example.ui.util.rememberScreenLayoutInfo(previewMode)
 
-        // Generated Results Output
-        if (generatedBundle != null) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("generated_results_card")
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Generated Copy & Formats",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Row {
-                                IconButton(
-                                    onClick = {
-                                        val textToCopy = when (selectedResultTab) {
-                                            0 -> generatedBundle?.primaryText ?: ""
-                                            1 -> generatedBundle?.shortVersion ?: ""
-                                            2 -> generatedBundle?.longVersion ?: ""
-                                            3 -> "${generatedBundle?.alternate1}\n\n${generatedBundle?.alternate2}\n\n${generatedBundle?.alternate3}"
-                                            else -> "${generatedBundle?.hashtags}\n\nImage Prompt: ${generatedBundle?.imagePrompt}"
-                                        }
-                                        copyToClipboard(context, textToCopy)
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy Content",
-                                        tint = VetTeal
-                                    )
-                                }
-                            }
-                        }
-
-                        ScrollableTabRow(
-                            selectedTabIndex = selectedResultTab,
-                            edgePadding = 0.dp,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            resultTabs.forEachIndexed { index, tabName ->
-                                Tab(
-                                    selected = selectedResultTab == index,
-                                    onClick = { selectedResultTab = index },
-                                    text = { Text(tabName, fontSize = 12.sp) }
+                    if (layoutInfo.isExpanded) {
+                        com.example.ui.components.ResponsiveTwoPaneLayout(
+                            isWideScreen = true,
+                            primaryWeight = 0.44f,
+                            secondaryWeight = 0.56f,
+                            primaryPane = {
+                                ThemeStudioFormPanel(viewModel = viewModel)
+                            },
+                            secondaryPane = {
+                                ThemeStudioResultsPanel(
+                                    viewModel = viewModel,
+                                    themeResult = themeResult,
+                                    themeStatusMessage = themeStatusMessage,
+                                    context = context
                                 )
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Tab content
-                        when (selectedResultTab) {
-                            0 -> ContentTextPreview(text = generatedBundle?.primaryText ?: "")
-                            1 -> ContentTextPreview(text = generatedBundle?.shortVersion ?: "")
-                            2 -> ContentTextPreview(text = generatedBundle?.longVersion ?: "")
-                            3 -> AlternatesPreview(
-                                alt1 = generatedBundle?.alternate1 ?: "",
-                                alt2 = generatedBundle?.alternate2 ?: "",
-                                alt3 = generatedBundle?.alternate3 ?: "",
-                                onCopy = { copyToClipboard(context, it) }
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            ThemeStudioFormPanel(viewModel = viewModel)
+                            ThemeStudioResultsPanel(
+                                viewModel = viewModel,
+                                themeResult = themeResult,
+                                themeStatusMessage = themeStatusMessage,
+                                context = context
                             )
-                            4 -> HashtagsAndPromptsPreview(
-                                hashtags = generatedBundle?.hashtags ?: "",
-                                imagePrompt = generatedBundle?.imagePrompt ?: "",
-                                videoPrompt = generatedBundle?.videoPrompt ?: "",
-                                onCopy = { copyToClipboard(context, it) }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Action Buttons based on User Role
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { viewModel.saveCurrentGeneratedPost(PostStatus.DRAFT) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("save_draft_button")
-                            ) {
-                                Text("Save Draft", fontSize = 12.sp)
-                            }
-
-                            if (currentRole == UserRole.CONTENT_CREATOR) {
-                                Button(
-                                    onClick = { viewModel.saveCurrentGeneratedPost(PostStatus.PENDING_APPROVAL) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = VetAmber),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("submit_approval_button")
-                                ) {
-                                    Text("Submit Approval", fontSize = 12.sp)
-                                }
-                            } else {
-                                Button(
-                                    onClick = { viewModel.saveCurrentGeneratedPost(PostStatus.APPROVED) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = VetTeal),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("approve_post_button")
-                                ) {
-                                    Text("Approve Post", fontSize = 12.sp)
-                                }
-                            }
                         }
                     }
                 }
             }
-        }
-    } else {
+        } else {
         // Facebook Structured Post Builder Mode
             item {
                 Card(
@@ -912,9 +621,9 @@ fun ContentCreatorScreen(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Status Filter Chips
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     listOf(
                         "ALL" to "All Posts",
@@ -925,7 +634,14 @@ fun ContentCreatorScreen(
                         FilterChip(
                             selected = fbStatusFilter == statusKey,
                             onClick = { fbStatusFilter = statusKey },
-                            label = { Text(label, fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         )
                     }
                 }
@@ -1488,4 +1204,12 @@ private fun copyToClipboard(context: Context, text: String) {
     val clip = ClipData.newPlainText("RVH Marketing Content", text)
     clipboard.setPrimaryClip(clip)
     Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+}
+
+private fun shareContent(context: Context, text: String) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share via"))
 }

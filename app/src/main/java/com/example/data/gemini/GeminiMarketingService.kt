@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -67,6 +68,36 @@ data class VeoVideoResult(
     val sourceImageUri: String? = null,
     val isSuccess: Boolean = true,
     val message: String = ""
+)
+
+data class SocialMediaCaption(
+    val style: String,
+    val captionText: String,
+    val hashtags: List<String>,
+    val callToAction: String,
+    val recommendedPlatform: String
+)
+
+data class MarketingPostIdea(
+    val title: String,
+    val angle: String,
+    val format: String,
+    val visualCreativePrompt: String,
+    val targetAudience: String,
+    val bestTimeToPost: String,
+    val keyTakeaway: String,
+    val callToAction: String
+)
+
+data class ThemeMarketingResult(
+    val theme: String,
+    val strategicOverview: String,
+    val targetAudience: String,
+    val targetPlatform: String,
+    val targetLanguage: String,
+    val captions: List<SocialMediaCaption>,
+    val postIdeas: List<MarketingPostIdea>,
+    val isAiGenerated: Boolean = true
 )
 
 class GeminiMarketingService {
@@ -616,14 +647,23 @@ class GeminiMarketingService {
         )
     }
 
-    private fun callGeminiRaw(apiKey: String, model: String, prompt: String): String {
+    private fun callGeminiRaw(
+        apiKey: String,
+        model: String,
+        prompt: String,
+        maxTokens: Int = 4096,
+        jsonMode: Boolean = true
+    ): String {
         val body = JSONObject().apply {
             put("contents", JSONArray().put(JSONObject().apply {
                 put("parts", JSONArray().put(JSONObject().put("text", prompt)))
             }))
             put("generationConfig", JSONObject().apply {
                 put("temperature", 0.7)
-                put("maxOutputTokens", 2048)
+                put("maxOutputTokens", maxTokens)
+                if (jsonMode) {
+                    put("responseMimeType", "application/json")
+                }
             })
         }
 
@@ -661,7 +701,11 @@ class GeminiMarketingService {
                 .removePrefix("```")
                 .removeSuffix("```")
                 .trim()
-            val obj = JSONObject(cleaned)
+            val obj = try {
+                JSONObject(cleaned)
+            } catch (je: JSONException) {
+                JSONObject(repairTruncatedJson(cleaned))
+            }
             GeneratedContentBundle(
                 primaryText = obj.optString("primaryText", ""),
                 shortVersion = obj.optString("shortVersion", ""),
@@ -687,7 +731,11 @@ class GeminiMarketingService {
                 .removePrefix("```")
                 .removeSuffix("```")
                 .trim()
-            val obj = JSONObject(cleaned)
+            val obj = try {
+                JSONObject(cleaned)
+            } catch (je: JSONException) {
+                JSONObject(repairTruncatedJson(cleaned))
+            }
             val scenesArray = obj.optJSONArray("scenes") ?: JSONArray()
             GeneratedVideoScriptBundle(
                 title = obj.optString("title", defaultTitle),
@@ -711,7 +759,11 @@ class GeminiMarketingService {
                 .removePrefix("```")
                 .removeSuffix("```")
                 .trim()
-            val obj = JSONObject(cleaned)
+            val obj = try {
+                JSONObject(cleaned)
+            } catch (je: JSONException) {
+                JSONObject(repairTruncatedJson(cleaned))
+            }
             GuidedMarketingResult(
                 mainContent = obj.optString("mainContent", ""),
                 alternate1 = obj.optString("alternate1", ""),
@@ -1230,4 +1282,475 @@ class GeminiMarketingService {
             }
         }
     }
+
+    /**
+     * Generate social media captions and marketing post ideas based on a user-provided theme for Rohit Veterinary House
+     */
+    suspend fun generateThemeCaptionsAndPostIdeas(
+        theme: String,
+        audience: String = "Cattle & Buffalo Dairy",
+        platform: String = "Multi-platform (Facebook & WhatsApp)",
+        language: String = "Hinglish",
+        tone: String = "Educational & Engaging"
+    ): ThemeMarketingResult = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (isApiKeyConfigured()) {
+            try {
+                val prompt = """
+                    You are the Chief Veterinary Marketing Director for 'Rohit Veterinary House' (+91 98765 43210), a premier animal healthcare clinic and veterinary medicine supply house in India.
+                    
+                    USER THEME / CAMPAIGN TOPIC: "$theme"
+                    TARGET AUDIENCE: "$audience" (e.g. Dairy Farmers, Pet Parents, Goat/Sheep Keepers, Poultry Farmers)
+                    PLATFORM: "$platform" (Facebook, WhatsApp, Instagram, or Multi-channel)
+                    LANGUAGE: "$language" (Hindi, Hinglish, or English)
+                    TONE: "$tone" (Educational, Promotional, Urgent Health Alert, Friendly)
+                    
+                    MANDATORY VETERINARY ETHICS:
+                    - Strict veterinary science accuracy. Never promise 100% cure or instant miracles.
+                    - Emphasize certified medicines, cold-chain assurance, timely doctor consultation, and animal welfare.
+                    - Clinic contact: Rohit Veterinary House (+91 98765 43210).
+                    
+                    DELIVERABLES:
+                    1. Generate 3 to 4 distinct, high-impact social media captions (styles: Engaging Hook, Educational Problem-Solution, Short & Punchy, Hinglish Local Connect) with relevant hashtags and CTAs. Keep them concise.
+                    2. Generate 3 to 4 creative marketing post ideas (angles: Myth vs Fact, Symptom Checklist Carousel, Farmer/Pet Story, Health Camp Announcement) with visual prompts and best posting times.
+                    
+                    Return ONLY a valid JSON object matching this schema without markdown fences:
+                    {
+                      "theme": "$theme",
+                      "strategicOverview": "Strategic analysis of why this theme helps animal welfare and clinic trust",
+                      "targetAudience": "$audience",
+                      "targetPlatform": "$platform",
+                      "targetLanguage": "$language",
+                      "captions": [
+                        {
+                          "style": "Engaging Hook",
+                          "captionText": "Full formatted caption with emojis...",
+                          "hashtags": ["#RohitVeterinaryHouse", "#VeterinaryCare", "#AnimalHealth"],
+                          "callToAction": "Call now: +91 98765 43210",
+                          "recommendedPlatform": "Facebook & Instagram"
+                        }
+                      ],
+                      "postIdeas": [
+                        {
+                          "title": "Creative Post Title",
+                          "angle": "Myth vs Fact",
+                          "format": "Carousel (4 slides)",
+                          "visualCreativePrompt": "Detailed visual layout prompt for graphic designer",
+                          "targetAudience": "$audience",
+                          "bestTimeToPost": "7:00 AM - 9:00 AM",
+                          "keyTakeaway": "One clear lesson for the animal owner",
+                          "callToAction": "Visit Rohit Veterinary House for certified care"
+                        }
+                      ]
+                    }
+                """.trimIndent()
+
+                val rawResponse = callGeminiRaw(apiKey, "gemini-3.5-flash", prompt, maxTokens = 8192, jsonMode = true)
+                val parsed = parseThemeMarketingResult(rawResponse, theme, audience, platform, language)
+                if (parsed != null && (parsed.captions.isNotEmpty() || parsed.postIdeas.isNotEmpty())) {
+                    return@withContext parsed.copy(isAiGenerated = true)
+                }
+            } catch (e: Exception) {
+                Log.e("GeminiService", "Theme generation failed, falling back to offline veterinary engine", e)
+            }
+        }
+
+        return@withContext generateOfflineThemeMarketingResult(theme, audience, platform, language, tone)
+    }
+
+    private fun parseThemeMarketingResult(
+        rawJson: String,
+        theme: String,
+        audience: String,
+        platform: String,
+        language: String
+    ): ThemeMarketingResult? {
+        val text = extractTextFromGeminiResponse(rawJson)
+        if (text.isBlank()) return null
+        return try {
+            val cleaned = text.trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+            val obj = try {
+                JSONObject(cleaned)
+            } catch (je: JSONException) {
+                // If the JSON was truncated or malformed, attempt best-effort repair
+                val repaired = repairTruncatedJson(cleaned)
+                JSONObject(repaired)
+            }
+            val strategicOverview = obj.optString("strategicOverview", "Strategic veterinary marketing campaign for '$theme' by Rohit Veterinary House.")
+            
+            val captionsList = mutableListOf<SocialMediaCaption>()
+            val captionsArr = obj.optJSONArray("captions")
+            if (captionsArr != null) {
+                for (i in 0 until captionsArr.length()) {
+                    val cObj = captionsArr.optJSONObject(i) ?: continue
+                    val style = cObj.optString("style", "Social Caption")
+                    val captionText = cObj.optString("captionText", "")
+                    val cta = cObj.optString("callToAction", "📞 Contact Rohit Veterinary House: +91 98765 43210")
+                    val recPlatform = cObj.optString("recommendedPlatform", platform)
+                    val tagsList = mutableListOf<String>()
+                    val tagsArr = cObj.optJSONArray("hashtags")
+                    if (tagsArr != null) {
+                        for (j in 0 until tagsArr.length()) {
+                            tagsList.add(tagsArr.getString(j))
+                        }
+                    }
+                    if (tagsList.isEmpty()) {
+                        tagsList.addAll(listOf("#RohitVeterinaryHouse", "#VeterinaryCare", "#AnimalHealth", "#PashuPalan"))
+                    }
+                    if (captionText.isNotBlank()) {
+                        captionsList.add(
+                            SocialMediaCaption(
+                                style = style,
+                                captionText = captionText,
+                                hashtags = tagsList,
+                                callToAction = cta,
+                                recommendedPlatform = recPlatform
+                            )
+                        )
+                    }
+                }
+            }
+
+            val postIdeasList = mutableListOf<MarketingPostIdea>()
+            val ideasArr = obj.optJSONArray("postIdeas")
+            if (ideasArr != null) {
+                for (i in 0 until ideasArr.length()) {
+                    val pObj = ideasArr.optJSONObject(i) ?: continue
+                    val title = pObj.optString("title", "Post Concept #${i + 1}")
+                    val angle = pObj.optString("angle", "Educational")
+                    val format = pObj.optString("format", "Carousel / Multi-Image")
+                    val visualCreativePrompt = pObj.optString("visualCreativePrompt", "Clean graphic showcasing veterinary care for $theme with Rohit Veterinary House branding.")
+                    val targetAudience = pObj.optString("targetAudience", audience)
+                    val bestTimeToPost = pObj.optString("bestTimeToPost", "7:30 AM - 9:30 AM")
+                    val keyTakeaway = pObj.optString("keyTakeaway", "Timely preventive veterinary care saves lives and maximizes livestock profitability.")
+                    val cta = pObj.optString("callToAction", "Consult Rohit Veterinary House (+91 98765 43210)")
+
+                    postIdeasList.add(
+                        MarketingPostIdea(
+                            title = title,
+                            angle = angle,
+                            format = format,
+                            visualCreativePrompt = visualCreativePrompt,
+                            targetAudience = targetAudience,
+                            bestTimeToPost = bestTimeToPost,
+                            keyTakeaway = keyTakeaway,
+                            callToAction = cta
+                        )
+                    )
+                }
+            }
+
+            ThemeMarketingResult(
+                theme = theme,
+                strategicOverview = strategicOverview,
+                targetAudience = audience,
+                targetPlatform = platform,
+                targetLanguage = language,
+                captions = captionsList,
+                postIdeas = postIdeasList,
+                isAiGenerated = true
+            )
+        } catch (e: Exception) {
+            Log.e("GeminiService", "Failed to parse theme marketing json", e)
+            null
+        }
+    }
+
+    /**
+     * Attempts to balance unclosed JSON braces/brackets and unterminated strings caused by token limits
+     */
+    private fun repairTruncatedJson(json: String): String {
+        var s = json.trim()
+        // If string ends inside an unclosed quote, close it
+        val inString = s.foldIndexed(false) { index, inStr, char ->
+            if (char == '"' && (index == 0 || s[index - 1] != '\\')) !inStr else inStr
+        }
+        if (inString) {
+            s += "\""
+        }
+        // Count open brackets and braces
+        var openBraces = 0
+        var openBrackets = 0
+        var insideQuotes = false
+        var escaped = false
+
+        for (ch in s) {
+            if (escaped) {
+                escaped = false
+                continue
+            }
+            if (ch == '\\') {
+                escaped = true
+                continue
+            }
+            if (ch == '"') {
+                insideQuotes = !insideQuotes
+                continue
+            }
+            if (!insideQuotes) {
+                when (ch) {
+                    '{' -> openBraces++
+                    '}' -> if (openBraces > 0) openBraces--
+                    '[' -> openBrackets++
+                    ']' -> if (openBrackets > 0) openBrackets--
+                }
+            }
+        }
+
+        // Remove trailing commas right before closing
+        s = s.trimEnd().removeSuffix(",")
+
+        // Close pending brackets and braces in proper reverse order
+        val sb = StringBuilder(s)
+        while (openBrackets > 0) {
+            sb.append("]")
+            openBrackets--
+        }
+        while (openBraces > 0) {
+            sb.append("}")
+            openBraces--
+        }
+        return sb.toString()
+    }
+
+    private fun generateOfflineThemeMarketingResult(
+        theme: String,
+        audience: String,
+        platform: String,
+        language: String,
+        tone: String
+    ): ThemeMarketingResult {
+        val lower = theme.lowercase()
+        val isPet = lower.contains("pet") || lower.contains("dog") || lower.contains("cat") || lower.contains("puppy") || lower.contains("kitten")
+        val isGoat = lower.contains("goat") || lower.contains("sheep") || lower.contains("बकरी")
+        val isPoultry = lower.contains("poultry") || lower.contains("chicken") || lower.contains("bird") || lower.contains("मुर्गी")
+        val isCattle = !isPet && !isGoat && !isPoultry
+
+        val strategicOverview = when {
+            isPet -> "Pet parents seek trustworthy, caring, and medically certified advice for $theme. This campaign builds emotional trust, reinforces vaccination/hygiene discipline, and positions Rohit Veterinary House as their neighborhood pet sanctuary."
+            isGoat -> "Goat and sheep rearers operate on tight margins where preventive deworming and timely vaccines directly safeguard flock survival. This theme highlights high-return veterinary care from Rohit Veterinary House."
+            isPoultry -> "Poultry farming requires strict biosecurity, electrolyte management, and vaccination schedules. This campaign offers clear, actionable guidance that prevents flock mortality."
+            else -> "Dairy farmers in India prioritize milk yield, reproductive fertility, and disease prevention. This campaign provides actionable veterinary science on $theme, positioning Rohit Veterinary House as their trusted partner in dairy profitability."
+        }
+
+        val captions = if (isPet) {
+            listOf(
+                SocialMediaCaption(
+                    style = "Engaging Hook (Instagram & Facebook)",
+                    captionText = """
+                        🐾 Is your furry baby protected against seasonal risks? ❤️
+                        
+                        When it comes to "$theme", waiting for symptoms can be dangerous. From vital core vaccinations to routine health evaluations, preventive care is the purest act of love for your pet!
+                        
+                        At Rohit Veterinary House, we ensure:
+                        ✅ 100% Cold-Chain Maintained Vaccines
+                        ✅ Gentle, fear-free clinical examinations
+                        ✅ Genuine prescription flea, tick & deworming treatments
+                        
+                        Give your pet the healthy, energetic life they deserve!
+                    """.trimIndent(),
+                    hashtags = listOf("#RohitVeterinaryHouse", "#PetCareIndia", "#DogHealth", "#HappyPets", "#VeterinaryClinic"),
+                    callToAction = "👉 Book your pet's wellness checkup today: Call/WhatsApp +91 98765 43210",
+                    recommendedPlatform = "Instagram & Facebook"
+                ),
+                SocialMediaCaption(
+                    style = "Educational Problem-Solution",
+                    captionText = """
+                        🩺 Vet Fact: Understanding "$theme" in Pets
+                        
+                        Many pet owners assume minor behavioral changes are normal, but early indicators often signal underlying nutritional gaps or parasite burdens.
+                        
+                        💡 What our veterinarians recommend:
+                        1. Never administer human painkillers or OTC syrups (they can be fatal to dogs and cats).
+                        2. Maintain a strict vaccination and deworming record.
+                        3. Consult our certified veterinary team at the very first sign of lethargy or loss of appetite.
+                        
+                        Rohit Veterinary House is equipped with genuine medications and clinical diagnostic expertise.
+                    """.trimIndent(),
+                    hashtags = listOf("#VeterinaryMedicine", "#PetWellness", "#RohitVetHouse", "#ResponsiblePetParenting"),
+                    callToAction = "📞 Speak with our veterinary team: +91 98765 43210",
+                    recommendedPlatform = "Facebook & WhatsApp"
+                ),
+                SocialMediaCaption(
+                    style = "Short & Punchy (WhatsApp Status / Reel)",
+                    captionText = """
+                        🐶 Healthy Pet, Happy Home! ❤️
+                        
+                        Don't skip your pet's essential care regarding "$theme". Certified vaccinations, gentle checkups, and genuine pet medicines available right here at Rohit Veterinary House!
+                        
+                        📍 Visit us today or WhatsApp for quick advice.
+                    """.trimIndent(),
+                    hashtags = listOf("#PetHealth", "#PuppyCare", "#RohitVeterinaryHouse"),
+                    callToAction = "📲 WhatsApp Now: +91 98765 43210",
+                    recommendedPlatform = "WhatsApp Status"
+                ),
+                SocialMediaCaption(
+                    style = "Hinglish / Local Connect",
+                    captionText = """
+                        प्यारे डॉगी या बिल्ली की सेहत में कोई रिस्क न लें! 🐕🐈
+                        
+                        "$theme" को लेकर अक्सर पेट पेरेंट्स परेशान रहते हैं। सही समय पर डॉक्टर की सलाह और ओरिजिनल दवाएं ही आपके पेट को तंदुरुस्त रख सकती हैं।
+                        
+                        ✨ रोहित वेटरनरी हाउस में आपको मिलती है:
+                        - असली कंपनी की दवाएं व विटामिन्स
+                        - सुरक्षित कोल्ड-चेन वाले टीके
+                        - प्यार भरा वेटरनरी परामर्श
+                    """.trimIndent(),
+                    hashtags = listOf("#RohitVeterinaryHouse", "#PetCareTips", "#VetHindi", "#DogLoversIndia"),
+                    callToAction = "📞 क्लिनिक हेल्पलाइन: +91 98765 43210",
+                    recommendedPlatform = "Facebook & WhatsApp"
+                ),
+                SocialMediaCaption(
+                    style = "Urgent Health Alert",
+                    captionText = """
+                        ⚠️ HEALTH ALERT: Don't ignore symptoms of "$theme"!
+                        
+                        Delaying veterinary attention can lead to severe complications and higher treatment costs. If your pet shows any unusual discomfort, visit Rohit Veterinary House immediately for safe, professional diagnosis.
+                    """.trimIndent(),
+                    hashtags = listOf("#PetEmergency", "#VeterinaryCare", "#RohitVeterinaryHouse"),
+                    callToAction = "🚨 Emergency & Regular Consultations: +91 98765 43210",
+                    recommendedPlatform = "Multi-platform Alert"
+                )
+            )
+        } else {
+            listOf(
+                SocialMediaCaption(
+                    style = "Engaging Hook (High Reach)",
+                    captionText = """
+                        🐄 पशुपालक भाइयों, क्या आपके पशु की सेहत और दूध उत्पादन "$theme" की वजह से प्रभावित हो रहा है? 🥛
+                        
+                        बदलते मौसम और पोषण की कमी के कारण अक्सर पशुओं में यह समस्या देखी जाती है। लेकिन सही समय पर उचित वैज्ञानिक देखभाल से आप अपने पशु को तंदुरुस्त रख सकते हैं और दूध का उत्पादन गिरने से बचा सकते हैं!
+                        
+                        रोहित वेटरनरी हाउस पर आपको मिलते हैं:
+                        ✅ प्रमाणित कंपनियों के चिलेटेड मिनरल मिक्सचर
+                        ✅ कोल्ड-चेन मेंटेन किए हुए असली टीके और दवाएं
+                        ✅ अनुभवी पशु चिकित्सा परामर्श
+                    """.trimIndent(),
+                    hashtags = listOf("#RohitVeterinaryHouse", "#DairyFarming", "#PashuPalan", "#KisanBhai", "#DoodhUtpadan"),
+                    callToAction = "📞 आज ही संपर्क करें या क्लिनिक पधारें: +91 98765 43210",
+                    recommendedPlatform = "Facebook & WhatsApp"
+                ),
+                SocialMediaCaption(
+                    style = "Educational Problem-Solution",
+                    captionText = """
+                        📋 वैज्ञानिक पशुपालन सलाह: "$theme" का सही प्रबंधन
+                        
+                        पशुपालन में अंधाधुंध देसी नुस्खों या अप्रमाणित दवाओं के प्रयोग से पशु की बच्चेदानी और दूध ग्रंथियों को भारी नुकसान हो सकता है।
+                        
+                        💡 रोहित वेटरनरी हाउस की 3 मुख्य सिफारिशें:
+                        1. बीमारी के लक्षण दिखते ही रजिस्टर्ड पशु चिकित्सक से जांच कराएं।
+                        2. संतुलित आहार में मिनरल मिक्सचर और पर्याप्त साफ पानी अवश्य दें।
+                        3. हर 3 महीने में पेट के कीड़ों की दवा (डीवॉर्मिंग) अवश्य दें।
+                        
+                        रोहित वेटरनरी हाउस - आपके पशुधन की सुरक्षा, हमारा संकल्प!
+                    """.trimIndent(),
+                    hashtags = listOf("#VeterinaryDoctor", "#PashuSwasthya", "#RohitVetHouse", "#DairyManagement"),
+                    callToAction = "📲 व्हाट्सएप पर परामर्श प्राप्त करें: +91 98765 43210",
+                    recommendedPlatform = "Facebook & WhatsApp Groups"
+                ),
+                SocialMediaCaption(
+                    style = "Short & Punchy (WhatsApp Broadcast)",
+                    captionText = """
+                        🌾 स्वस्थ पशु = समृद्ध किसान! 🐄✨
+                        
+                        "$theme" के संबंध में किसी भी प्रकार की शंका या दवा के लिए सीधे संपर्क करें रोहित वेटरनरी हाउस से। सभी प्रकार के ब्रांडेड पशु उत्पाद व टीके उचित मूल्य पर उपलब्ध हैं।
+                    """.trimIndent(),
+                    hashtags = listOf("#RohitVeterinaryHouse", "#DairyFarmer", "#Pashudhan"),
+                    callToAction = "📞 कॉल करें: +91 98765 43210",
+                    recommendedPlatform = "WhatsApp Broadcast"
+                ),
+                SocialMediaCaption(
+                    style = "Hinglish / Local Connect",
+                    captionText = """
+                        दूध का रेट और फैट दोनों बढ़ेंगे जब पशु रहेगा अंदर से फिट! 🥛💪
+                        
+                        "$theme" की समस्या को हल्के में न लें। रोहित वेटरनरी हाउस आपके लिए लाया है हाई-क्वालिटी न्यूट्रिशन और असरदार इलाज, जिससे पशु रहे स्वस्थ और आप रहें बेफिक्र।
+                    """.trimIndent(),
+                    hashtags = listOf("#RohitVeterinaryHouse", "#DairyCare", "#HinglishPost"),
+                    callToAction = "📍 रोहित वेटरनरी हाउस, मुख्य बाजार | फोन: +91 98765 43210",
+                    recommendedPlatform = "Facebook Page"
+                ),
+                SocialMediaCaption(
+                    style = "Urgent Seasonal Health Alert",
+                    captionText = """
+                        ⚠️ आवश्यक सूचना: "$theme" से अपने पशुधन का तुरंत बचाव करें!
+                        
+                        मौसम के बदलाव के दौरान संक्रमण का खतरा तेजी से फैलता है। लक्षण दिखने से पहले ही बचाव के टीके और सप्लीमेंट्स लें। रोहित वेटरनरी हाउस पर कोल्ड-चेन सुरक्षित दवाएं हमेशा उपलब्ध हैं।
+                    """.trimIndent(),
+                    hashtags = listOf("#HealthAlert", "#PashuSuraksha", "#RohitVeterinaryHouse"),
+                    callToAction = "🚨 तुरंत कॉल करें: +91 98765 43210",
+                    recommendedPlatform = "All Social Channels"
+                )
+            )
+        }
+
+        val postIdeas = listOf(
+            MarketingPostIdea(
+                title = "Myth vs. Fact: Uncovering Truths about $theme",
+                angle = "Myth vs Fact",
+                format = "Carousel (4 slides)",
+                visualCreativePrompt = "Slide 1: Split graphic with red 'MYTH' vs green 'FACT' stamps showing an Indian dairy cow/pet. Clean bold bilingual typography in dark green and white with Rohit Veterinary House logo at top.",
+                targetAudience = audience,
+                bestTimeToPost = "7:00 AM - 9:00 AM (Morning milking/feeding window)",
+                keyTakeaway = "Scientific veterinary medication out-performs hearsay and unverified domestic remedies every time.",
+                callToAction = "Get verified scientific guidance at Rohit Veterinary House (+91 98765 43210)"
+            ),
+            MarketingPostIdea(
+                title = "5 Warning Signs of $theme Every Owner Must Know",
+                angle = "Symptom Checklist Carousel",
+                format = "Multi-Slide Infographic",
+                visualCreativePrompt = "Modern infographic card with numbered icons (thermometer, appetite loss, milk drop/fur condition, posture, energy levels) against soft teal background with doctor badge.",
+                targetAudience = audience,
+                bestTimeToPost = "12:30 PM - 2:00 PM (Afternoon rest break)",
+                keyTakeaway = "Early intervention within 12-24 hours reduces treatment costs by up to 70%.",
+                callToAction = "Spot any signs? Call Rohit Veterinary House immediately: +91 98765 43210"
+            ),
+            MarketingPostIdea(
+                title = "Real Success Story: Overcoming $theme",
+                angle = "Customer Testimonial Angle",
+                format = "Short Reel / Photo Story",
+                visualCreativePrompt = "Authentic portrait of a smiling farmer holding high-yielding dairy cow or happy pet owner with dog, holding certified medicine packaging with clinic background.",
+                targetAudience = audience,
+                bestTimeToPost = "6:30 PM - 8:30 PM (Evening leisure scrolling)",
+                keyTakeaway = "Consistency in dosage and authentic medicines from Rohit Veterinary House delivers guaranteed peace of mind.",
+                callToAction = "Join hundreds of satisfied livestock and pet owners at Rohit Veterinary House."
+            ),
+            MarketingPostIdea(
+                title = "Interactive Knowledge Quiz: How well do you know $theme?",
+                angle = "Interactive Community Quiz / Poll",
+                format = "Engagement Poll / Story Card",
+                visualCreativePrompt = "Bright eye-catching quiz graphic with 4 choice options (A, B, C, D) and a question mark illustration. Footer banner encouraging comments below.",
+                targetAudience = audience,
+                bestTimeToPost = "1:00 PM - 3:00 PM",
+                keyTakeaway = "Engages the community while educating them about preventative protocols.",
+                callToAction = "Drop your answer in the comments! Correct answers receive a free health advisory guide at our clinic."
+            ),
+            MarketingPostIdea(
+                title = "Special Awareness Camp & Consultation on $theme",
+                angle = "Health Camp / Clinic Announcement",
+                format = "High-Impact Announcement Banner",
+                visualCreativePrompt = "Bold promotional banner featuring veterinarian stethoscope icon, calendar badge with 'THIS WEEK', genuine medicine bottles, and bright CTA banner with Rohit Veterinary House phone number.",
+                targetAudience = audience,
+                bestTimeToPost = "8:00 AM - 10:00 AM",
+                keyTakeaway = "Direct incentive to visit the clinic or call for supply orders.",
+                callToAction = "Special checkup and genuine products available at Rohit Veterinary House: +91 98765 43210"
+            )
+        )
+
+        return ThemeMarketingResult(
+            theme = theme,
+            strategicOverview = strategicOverview,
+            targetAudience = audience,
+            targetPlatform = platform,
+            targetLanguage = language,
+            captions = captions,
+            postIdeas = postIdeas,
+            isAiGenerated = false
+        )
+    }
 }
+

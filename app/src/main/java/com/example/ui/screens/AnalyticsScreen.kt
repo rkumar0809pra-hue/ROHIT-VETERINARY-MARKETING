@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.SampleDataProvider
 import com.example.data.model.PostStatus
+import com.example.ui.components.ResponsiveContentContainer
+import com.example.ui.components.ResponsiveTwoPaneLayout
 import com.example.ui.theme.FacebookBlue
 import com.example.ui.theme.StatusApproved
 import com.example.ui.theme.StatusPublished
@@ -70,6 +72,7 @@ import com.example.ui.theme.VetBlue
 import com.example.ui.theme.VetTeal
 import com.example.ui.theme.WhatsAppDark
 import com.example.ui.theme.WhatsAppGreen
+import com.example.ui.util.rememberScreenLayoutInfo
 import com.example.ui.viewmodel.MarketingViewModel
 
 @Composable
@@ -119,13 +122,324 @@ fun AnalyticsScreen(
     val totalCampaignRecipients = allCampaigns.sumOf { it.totalRecipients }
     val totalCampaignResponses = allCampaigns.sumOf { it.responseCount }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("analytics_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    val previewMode by viewModel.previewDeviceMode.collectAsState()
+    val layoutInfo = rememberScreenLayoutInfo(previewMode)
+
+    ResponsiveContentContainer(modifier = modifier) {
+        if (layoutInfo.isExpanded) {
+            ResponsiveTwoPaneLayout(
+                isWideScreen = true,
+                primaryWeight = 0.52f,
+                secondaryWeight = 0.48f,
+                primaryPane = {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("analytics_left_pane"),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Header & Filter
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Marketing Performance & KPIs",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Track campaign response, approval turnaround, and inquiries for Rohit Veterinary House",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            val rangeLabel = when (selectedTimeRange) {
+                                                "7D" -> "Last 7 Days"
+                                                "30D" -> "Last 30 Days"
+                                                else -> "All Time"
+                                            }
+                                            val report = """
+                                                📊 Rohit Veterinary House - Marketing Performance Brief
+                                                🕒 Window: $rangeLabel
+                                                📝 Total Posts: $totalPosts
+                                                🎬 Veo 3 AI Video Reels: $veoGeneratedCount
+                                                🛡️ Approval / Compliance Score: $approvalRate%
+                                                🚀 Publish Rate: $publishRate%
+                                                📞 Inquiries & Calls: $totalLeads
+                                                💬 WhatsApp Delivered: $totalCampaignRecipients
+                                                💬 WhatsApp Direct Replies: $totalCampaignResponses
+                                                🩺 Veterinary Category Split:
+                                                  - Cattle & Dairy: $cattleCount
+                                                  - Pets & Companion: $petCount
+                                                  - Poultry & Small Ruminants: $poultryCount
+                                                
+                                                Verified 100% compliant with veterinary health advertising standards.
+                                            """.trimIndent()
+                                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, "RVH Performance Brief")
+                                                putExtra(Intent.EXTRA_TEXT, report)
+                                            }
+                                            context.startActivity(Intent.createChooser(intent, "Share Performance Report"))
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = VetTeal),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Export Brief", fontSize = 11.sp)
+                                    }
+                                }
+
+                                // Time Range Filter Chips
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("ALL" to "All Time", "30D" to "Last 30 Days", "7D" to "Last 7 Days").forEach { (key, label) ->
+                                        FilterChip(
+                                            selected = selectedTimeRange == key,
+                                            onClick = { selectedTimeRange = key },
+                                            label = { Text(label, fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4 KPI Cards in 2x2 grid
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                KpiCard(
+                                    title = "Approval Rate",
+                                    value = "$approvalRate%",
+                                    subText = "Compliance Score",
+                                    color = StatusApproved,
+                                    icon = Icons.Outlined.CheckCircle,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                KpiCard(
+                                    title = "Publish Rate",
+                                    value = "$publishRate%",
+                                    subText = "Drafts to Live",
+                                    color = StatusPublished,
+                                    icon = Icons.Default.Send,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                KpiCard(
+                                    title = "Total Inquiries / Leads",
+                                    value = "$totalLeads",
+                                    subText = "Calls & Messages",
+                                    color = VetTeal,
+                                    icon = Icons.Outlined.TrendingUp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                KpiCard(
+                                    title = "Veo 3 AI Videos",
+                                    value = "$veoGeneratedCount",
+                                    subText = "AI Generated Reels",
+                                    color = Color(0xFF6366F1),
+                                    icon = Icons.Outlined.Movie,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // Campaign Response Summary Table
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Audience Segment Response Analysis",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(text = "Segment", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = "Delivered", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = "Replies", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = "Conv %", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    allCampaigns.forEach { c ->
+                                        val conv = if (c.sentCount > 0) (c.responseCount * 100) / c.sentCount else 0
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(text = c.campaignName, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1.3f))
+                                            Text(text = "${c.sentCount}", fontSize = 12.sp, modifier = Modifier.weight(0.7f))
+                                            Text(text = "${c.responseCount}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VetTeal, modifier = Modifier.weight(0.7f))
+                                            Text(text = "$conv%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VetAmber, modifier = Modifier.weight(0.7f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                secondaryPane = {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("analytics_right_pane"),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Platform Channel Breakdown
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Content Volume by Channel",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    ChannelBarProgress(
+                                        channel = "WhatsApp Broadcasts & Status",
+                                        count = whatsAppPostsCount,
+                                        total = maxOf(1, totalPosts),
+                                        color = WhatsAppDark
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    ChannelBarProgress(
+                                        channel = "Facebook Page Posts & Ads",
+                                        count = facebookPostsCount,
+                                        total = maxOf(1, totalPosts),
+                                        color = FacebookBlue
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    ChannelBarProgress(
+                                        channel = "Video Reels & Shorts",
+                                        count = videoScriptsCount,
+                                        total = maxOf(1, totalPosts),
+                                        color = Color(0xFF6366F1)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    ChannelBarProgress(
+                                        channel = "Veo 3 AI Video Reels",
+                                        count = veoGeneratedCount,
+                                        total = maxOf(1, totalPosts + veoGeneratedCount),
+                                        color = VetTeal
+                                    )
+                                }
+                            }
+                        }
+
+                        // Veterinary Practice Distribution
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Veterinary Practice & Patient Distribution",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    ChannelBarProgress(
+                                        channel = "🐄 Dairy Cattle & Buffalo (Milk, Mastitis, Calcium)",
+                                        count = cattleCount,
+                                        total = maxOf(1, totalPosts),
+                                        color = Color(0xFF0284C7)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    ChannelBarProgress(
+                                        channel = "🐕 Canine & Feline Pets (Deworming, Vaccines, Ticks)",
+                                        count = petCount,
+                                        total = maxOf(1, totalPosts),
+                                        color = Color(0xFF10B981)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    ChannelBarProgress(
+                                        channel = "🐐 Poultry & Small Ruminants (Outbreak, Feeds)",
+                                        count = poultryCount,
+                                        total = maxOf(1, totalPosts),
+                                        color = VetAmber
+                                    )
+                                }
+                            }
+                        }
+
+                        // Strategic Local Recommendations
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = VetTeal)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "AI Content Recommendations for RVH",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = VetTeal
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "• Dairy cattle mineral mixture posts have the highest conversion rate (19%). Plan 2 more posts this week.\n• Monsoon deworming reminders for goat farmers convert best when posted before 8:00 AM on WhatsApp.\n• Pet vaccination camps on Facebook generate 3x more comments when paired with a photo of the clinic.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF166534),
+                                        lineHeight = 18.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("analytics_screen"),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -405,6 +719,8 @@ fun AnalyticsScreen(
                     )
                 }
             }
+        }
+    }
         }
     }
 }

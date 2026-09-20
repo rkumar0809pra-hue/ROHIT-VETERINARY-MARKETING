@@ -4,6 +4,7 @@ import com.example.data.AppDatabase
 import com.example.data.gemini.GeminiMarketingService
 import com.example.data.gemini.GeneratedContentBundle
 import com.example.data.gemini.GeneratedVideoScriptBundle
+import com.example.data.gemini.ThemeMarketingResult
 import com.example.data.gemini.VeoVideoResult
 import com.example.data.model.ChatMessage
 import com.example.data.model.GeneratedVeoVideo
@@ -276,6 +277,22 @@ class MarketingRepository(
         language: String
     ): GeneratedVideoScriptBundle {
         return geminiService.generateVideoScript(title, category, durationSec, aspectRatio, language)
+    }
+
+    suspend fun generateThemeCaptionsAndPostIdeas(
+        theme: String,
+        audience: String,
+        platform: String,
+        language: String,
+        tone: String
+    ): ThemeMarketingResult {
+        return geminiService.generateThemeCaptionsAndPostIdeas(
+            theme = theme,
+            audience = audience,
+            platform = platform,
+            language = language,
+            tone = tone
+        )
     }
 
     fun isGeminiConfigured(): Boolean = geminiService.isApiKeyConfigured()
