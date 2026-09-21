@@ -80,9 +80,9 @@ class MarketingViewModel(
         _currentRole.value = role
     }
 
-    // Responsive Preview Device Simulation Mode (AUTO, MOBILE_PREVIEW, TABLET_PREVIEW, DESKTOP_PREVIEW)
-    // Allows preview-friendly testing inside the Google AI Studio emulator
-    val previewDeviceMode = MutableStateFlow("AUTO") // "AUTO", "MOBILE", "TABLET", "DESKTOP"
+    // Responsive Preview Device Simulation Mode (AUTO, MOBILE, TABLET, DESKTOP)
+    // Defaults to DESKTOP as requested by the user for desktop-first experience
+    val previewDeviceMode = MutableStateFlow("DESKTOP") // "DESKTOP", "AUTO", "MOBILE", "TABLET"
     fun setPreviewDeviceMode(mode: String) {
         previewDeviceMode.value = mode
     }

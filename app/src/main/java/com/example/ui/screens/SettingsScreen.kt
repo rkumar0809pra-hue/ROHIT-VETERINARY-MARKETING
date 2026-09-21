@@ -21,11 +21,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LaptopMac
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
@@ -44,13 +47,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.UserRole
@@ -274,8 +283,13 @@ fun SettingsScreen(
         }
     }
 
-    // Install & Cross-Platform Access Card (Desktop + Android)
+    // Install & Cross-Platform Access Card (Web PWA + Desktop + Android)
     val installCard: @Composable () -> Unit = {
+        val clipboardManager = LocalClipboardManager.current
+        var copiedTag by remember { mutableStateOf<String?>(null) }
+        val devUrl = "https://ais-dev-qesfk423rqfs5n2dij7dsi-266501144854.asia-southeast1.run.app"
+        val sharedUrl = "https://ais-pre-qesfk423rqfs5n2dij7dsi-266501144854.asia-southeast1.run.app"
+
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(16.dp),
@@ -284,10 +298,10 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.PhoneAndroid, contentDescription = null, tint = VetTeal)
+                    Icon(imageVector = Icons.Default.LaptopMac, contentDescription = null, tint = VetTeal)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Use on Phone & Desktop",
+                        text = "Web PWA & Desktop Command Hub",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -295,7 +309,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Desktop section
+                // Desktop PWA section
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(12.dp),
@@ -303,13 +317,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Computer, contentDescription = null, tint = VetBlue, modifier = Modifier.size(20.dp))
+                            Icon(imageVector = Icons.Default.Language, contentDescription = null, tint = VetTeal, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("1. On Your Desktop / PC", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("1. Install as Desktop App (PWA)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "• Open the Shared or Dev Web URL directly in Chrome, Edge, or Safari.\n• Click the Install / Desktop icon in your browser URL bar to install as a standalone Desktop App (PWA / Web App) with full window resizing support.",
+                            text = "• Google Chrome & Microsoft Edge: Click the 'Install App' icon on the right side of the address bar, or go to Menu (⋮) -> 'Install Rohit Vet Studio'. It launches in a borderless desktop window.\n• Safari on Mac: Choose File -> 'Add to Dock' to pin it as a native desktop application.\n• Desktop Experience: Enjoy the permanent left command sidebar, dual-pane creator split views, and full keyboard/mouse navigation.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 16.sp
@@ -319,21 +333,107 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Android Phone section
+                // Direct Web URLs
                 Surface(
                     color = VetTeal.copy(alpha = 0.08f),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
+                        Text("2. Direct Web / Browser URLs", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = VetTeal)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Dev URL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Live Web App URL", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = devUrl,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(devUrl))
+                                    copiedTag = "dev"
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (copiedTag == "dev") Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (copiedTag == "dev") "Copied" else "Copy", fontSize = 10.5.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Shared URL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Public Shared URL", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = sharedUrl,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(sharedUrl))
+                                    copiedTag = "shared"
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (copiedTag == "shared") Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (copiedTag == "shared") "Copied" else "Copy", fontSize = 10.5.sp)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Mobile Access
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Download, contentDescription = null, tint = VetTeal, modifier = Modifier.size(20.dp))
+                            Icon(imageVector = Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("2. On Your Android Phone", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = VetTeal)
+                            Text("3. On Android & Mobile Devices", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "• Install APK directly: In the AI Studio top toolbar, click Settings / Export → Download APK or Export ZIP.\n• Or open the App Link in Chrome on your phone and tap 'Add to Home Screen' for instant mobile access.\n• Responsive layout automatically switches from wide desktop multi-column view to mobile touch mode.",
+                            text = "• Mobile PWA: Open the web link in Chrome on your phone and tap 'Add to Home Screen' or 'Install App'.\n• Native APK: In the AI Studio top toolbar, click Settings / Export → Download APK or Export ZIP.\n• Responsive layout automatically transitions to bottom navigation and single-column touch cards.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 16.sp

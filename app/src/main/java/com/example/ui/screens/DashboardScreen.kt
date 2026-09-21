@@ -72,8 +72,10 @@ import com.example.data.model.Platform
 import com.example.data.model.PostStatus
 import com.example.data.model.UserRole
 import com.example.ui.components.PlatformBadge
+import com.example.ui.components.ResponsiveContentContainer
 import com.example.ui.components.RolePill
 import com.example.ui.components.StatusBadge
+import com.example.ui.util.rememberScreenLayoutInfo
 import com.example.ui.theme.FacebookBlue
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.StatusApproved
@@ -128,13 +130,17 @@ fun DashboardScreen(
         selectedChannelFilter == "ALL" || it.platform.contains(selectedChannelFilter, ignoreCase = true)
     }.sortedByDescending { it.createdDateMillis }.take(6)
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("dashboard_screen"),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    val previewMode by viewModel.previewDeviceMode.collectAsState()
+    val layoutInfo = rememberScreenLayoutInfo(previewMode)
+
+    ResponsiveContentContainer(modifier = modifier) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("dashboard_screen"),
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // Business Header Hero
         item {
             ClinicHeroBanner(
@@ -214,11 +220,11 @@ fun DashboardScreen(
             }
             Spacer(modifier = Modifier.height(10.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Row 1: Drafts, Pending Approval
+            if (layoutInfo.isExpanded) {
+                // Desktop 6-column metric card display
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     MetricCard(
                         title = "Drafts",
@@ -229,19 +235,13 @@ fun DashboardScreen(
                         onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
                     )
                     MetricCard(
-                        title = "Pending Approval",
+                        title = "Pending",
                         count = metrics.pendingApprovalCount.toString(),
                         accentColor = StatusPending,
                         icon = Icons.Default.Check,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
                     )
-                }
-                // Row 2: Approved, Scheduled
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     MetricCard(
                         title = "Approved",
                         count = metrics.approvedCount.toString(),
@@ -258,12 +258,6 @@ fun DashboardScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.navigateTo(NavTab.CALENDAR) }
                     )
-                }
-                // Row 3: Published, Leads
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     MetricCard(
                         title = "Published",
                         count = metrics.publishedCount.toString(),
@@ -273,13 +267,82 @@ fun DashboardScreen(
                         onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
                     )
                     MetricCard(
-                        title = "Leads Generated",
+                        title = "Leads",
                         count = metrics.totalLeads.toString(),
                         accentColor = VetTeal,
                         icon = Icons.Outlined.TrendingUp,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.navigateTo(NavTab.ANALYTICS) }
                     )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Row 1: Drafts, Pending Approval
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MetricCard(
+                            title = "Drafts",
+                            count = metrics.draftsCount.toString(),
+                            accentColor = StatusDraft,
+                            icon = Icons.Outlined.Edit,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
+                        )
+                        MetricCard(
+                            title = "Pending Approval",
+                            count = metrics.pendingApprovalCount.toString(),
+                            accentColor = StatusPending,
+                            icon = Icons.Default.Check,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
+                        )
+                    }
+                    // Row 2: Approved, Scheduled
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MetricCard(
+                            title = "Approved",
+                            count = metrics.approvedCount.toString(),
+                            accentColor = StatusApproved,
+                            icon = Icons.Outlined.CheckCircle,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
+                        )
+                        MetricCard(
+                            title = "Scheduled",
+                            count = metrics.scheduledCount.toString(),
+                            accentColor = StatusScheduled,
+                            icon = Icons.Outlined.Event,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.navigateTo(NavTab.CALENDAR) }
+                        )
+                    }
+                    // Row 3: Published, Leads
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MetricCard(
+                            title = "Published",
+                            count = metrics.publishedCount.toString(),
+                            accentColor = StatusPublished,
+                            icon = Icons.Outlined.Send,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
+                        )
+                        MetricCard(
+                            title = "Leads Generated",
+                            count = metrics.totalLeads.toString(),
+                            accentColor = VetTeal,
+                            icon = Icons.Outlined.TrendingUp,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.navigateTo(NavTab.ANALYTICS) }
+                        )
+                    }
                 }
             }
         }
@@ -472,6 +535,7 @@ fun DashboardScreen(
                 onClick = { viewModel.navigateTo(NavTab.LIBRARY) }
             )
         }
+    }
     }
 }
 

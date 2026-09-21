@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LaptopMac
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -85,6 +89,7 @@ fun DesktopNavSidebar(
     currentRole: UserRole,
     onTabSelected: (NavTab) -> Unit,
     onRoleClick: () -> Unit,
+    onOpenPwaGuide: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -174,24 +179,77 @@ fun DesktopNavSidebar(
                 }
             }
 
-            // Bottom Profile / Role section in Sidebar
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "Operating Role",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    RolePill(
-                        role = currentRole,
-                        onClick = onRoleClick
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Web PWA / Desktop Status Card
+                Surface(
+                    color = VetTeal.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onOpenPwaGuide() }
+                        .testTag("sidebar_pwa_guide_btn")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(VetTeal.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LaptopMac,
+                                contentDescription = "PWA Desktop Mode",
+                                tint = VetTeal,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Web PWA • Desktop",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = VetTeal
+                            )
+                            Text(
+                                text = "Click for Install & URLs",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "PWA Info",
+                            tint = VetTeal,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                // Operating Role card in Sidebar
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Operating Role",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        RolePill(
+                            role = currentRole,
+                            onClick = onRoleClick
+                        )
+                    }
                 }
             }
         }

@@ -2,19 +2,30 @@ package com.example.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LaptopMac
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
@@ -25,6 +36,11 @@ import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.FolderCopy
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,7 +67,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -90,6 +109,7 @@ fun MainScaffold(
 
     var showMenu by remember { mutableStateOf(false) }
     var showDeviceModeMenu by remember { mutableStateOf(false) }
+    var showPwaDialog by remember { mutableStateOf(false) }
 
     // Preserve back navigation: return to Dashboard from secondary tabs before exiting
     BackHandler(enabled = currentTab != NavTab.DASHBOARD) {
@@ -112,7 +132,8 @@ fun MainScaffold(
                 currentTab = currentTab,
                 currentRole = currentRole,
                 onTabSelected = { viewModel.navigateTo(it) },
-                onRoleClick = cycleRole
+                onRoleClick = cycleRole,
+                onOpenPwaGuide = { showPwaDialog = true }
             )
         } else if (layoutInfo.isMedium) {
             // 2. Tablet Navigation Rail (Medium screen breakpoint)
@@ -220,6 +241,35 @@ fun MainScaffold(
                             )
                         }
 
+                        // Web PWA & Desktop Information Quick Button
+                        Surface(
+                            onClick = { showPwaDialog = true },
+                            color = VetTeal.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .testTag("topbar_pwa_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LaptopMac,
+                                    contentDescription = "Web PWA Mode",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = VetTeal
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Web PWA",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VetTeal
+                                )
+                            }
+                        }
+
                         IconButton(
                             onClick = { viewModel.navigateTo(NavTab.ASSISTANT) },
                             modifier = Modifier.testTag("topbar_ai_assistant_btn")
@@ -240,6 +290,14 @@ fun MainScaffold(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("Web PWA & Desktop Setup") },
+                                    leadingIcon = { Icon(Icons.Default.LaptopMac, null, tint = VetTeal) },
+                                    onClick = {
+                                        showPwaDialog = true
+                                        showMenu = false
+                                    }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("AI Assistant") },
                                     leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null) },
@@ -400,6 +458,182 @@ fun MainScaffold(
             }
         }
     }
+
+    if (showPwaDialog) {
+        WebPwaDesktopDialog(onDismiss = { showPwaDialog = false })
+    }
+}
+
+@Composable
+fun WebPwaDesktopDialog(
+    onDismiss: () -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var copiedUrl by remember { mutableStateOf<String?>(null) }
+
+    val devUrl = "https://ais-dev-qesfk423rqfs5n2dij7dsi-266501144854.asia-southeast1.run.app"
+    val sharedUrl = "https://ais-pre-qesfk423rqfs5n2dij7dsi-266501144854.asia-southeast1.run.app"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = VetTeal)
+            ) {
+                Text("Got It")
+            }
+        },
+        icon = {
+            Icon(
+                imageVector = Icons.Default.LaptopMac,
+                contentDescription = null,
+                tint = VetTeal,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Web PWA & Desktop Command Hub",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Rohit Veterinary House Studio runs as a full-featured Desktop Web Application / Progressive Web App (PWA). You can open it in any browser or install it directly to your Desktop or Taskbar for a borderless desktop experience.",
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 17.sp
+                )
+
+                // Desktop PWA Installation steps
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Language, contentDescription = null, tint = VetTeal, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("How to Install as Desktop App (PWA)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Text(
+                            text = "1. Chrome & Edge (Windows, Mac, Linux):\n" +
+                                   "Click the Install icon in the browser URL address bar, or click Browser Menu (⋮) -> 'Install Rohit Vet Studio' or 'Save and Share' -> 'Install app'. It opens as a standalone desktop window!\n\n" +
+                                   "2. Safari (macOS Sonoma+):\n" +
+                                   "Click File -> 'Add to Dock' to pin it as a native Mac desktop application.\n\n" +
+                                   "3. Phone, Tablet & Chromebook:\n" +
+                                   "Tap Chrome Menu -> 'Install app' or 'Add to Home Screen' for fullscreen touch use.",
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Direct Web URLs with Copy Buttons
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VetTeal.copy(alpha = 0.08f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Direct Web / PWA URLs", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = VetTeal)
+
+                        // Dev URL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Live Web App URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = devUrl,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(devUrl))
+                                    copiedUrl = "dev"
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (copiedUrl == "dev") Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (copiedUrl == "dev") "Copied" else "Copy", fontSize = 11.sp)
+                            }
+                        }
+
+                        // Shared URL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Public Shared URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = sharedUrl,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(sharedUrl))
+                                    copiedUrl = "shared"
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (copiedUrl == "shared") Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (copiedUrl == "shared") "Copied" else "Copy", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
+                // Desktop Features Highlights
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Desktop-Friendly Enhancements Active", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("• Fixed Left Command Sidebar with full module navigation", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("• 6-column widescreen metric cards on Dashboard", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("• Dual-pane side-by-side generators for Content, Themes & Video", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("• Full keyboard typing, scroll wheel, and mouse cursor support", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Preview(showBackground = true, showSystemUi = true)
