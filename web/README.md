@@ -96,3 +96,11 @@ node --check public/app.js
 ```
 
 Tests cover authentication and CSRF-origin protection, approval and planning transitions, stale edits, missing AI configuration, agent failure handling, metrics validation, Responses parsing and persistence across restart. Browser verification should cover desktop and Android-sized layouts, generating a draft, approval, planning, offline shell loading and installability on the final HTTPS domain.
+
+## Weekly planning upgrade
+
+Render Node build command: `npm ci && npm test`. Start: `npm start`.
+
+Settings includes an optional HTTPS booking URL. Marketing manager creates seven daily Hindi drafts from confirmed goals, availability and budget (four plans per day). Approval inbox provides owner-only batch approval with stale-version protection. Tasks are assigned drafts, not independently executed social jobs. No automatic sending or booking is enabled.
+
+New Veo clips receive a four-second branded contact ending; existing videos are unchanged. Install dependencies with npm ci. If branding fails, the original clip is saved with a warning. Set VIDEO_BRANDING=off to disable. Speech transcription, subtitles and custom logo uploads are not included.

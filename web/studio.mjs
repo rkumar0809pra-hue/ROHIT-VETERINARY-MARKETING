@@ -1,3 +1,4 @@
+import { brandVideo } from './video-branding.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, statSync, createReadStream, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -19,6 +20,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   mkdirSync(mediaDir, { recursive: true });
   const now = () => new Date().toISOString();
   let stopped = false, chatBusy = false;
+  let managerBusy=false;
   const running = new Set(), tasks = new Set();
   const track = (promise) => { tasks.add(promise); promise.finally(() => tasks.delete(promise)).catch(() => {}); return promise; };
   const profile = () => ({ ...defaultProfile, ...JSON.parse(db.prepare('SELECT data FROM profile WHERE id=1').get()?.data || '{}') });
@@ -48,7 +50,15 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
     running.add(row.id);
     try {
       const uri=await provider.pollVideo(row.operation);
-      if(uri) finish(row.id,await provider.downloadVideo(uri),'video/mp4');
+      if(uri) {
+        const original=await provider.downloadVideo(uri);
+        // Preserve the provider result even if local branding is unavailable.
+        let branded;
+        try {if(env.VIDEO_BRANDING!=='off') branded=await brandVideo(original,profile(),row.ratio,row.duration);}catch{}
+        finish(row.id,branded||original,'video/mp4');
+        if(branded) db.prepare('UPDATE media SET duration=? WHERE id=?').run(row.duration+4,row.id);
+        else if(env.VIDEO_BRANDING!=='off') db.prepare('UPDATE media SET error=? WHERE id=?').run('Original video saved. Automatic closing card could not be added; check server video dependencies.',row.id);
+      }
       else db.prepare('UPDATE media SET error=NULL,updated_at=? WHERE id=?').run(now(),row.id);
     } catch(err) {
       // Keep the saved operation for retries; never start a second billable generation automatically.
@@ -66,7 +76,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   timer.unref();
   function metadata(data) {
     const out={};
-    for(const key of ['platform','category','audience','service','tone','cta','headline','hashtags','imagePrompt','videoPrompt']) {
+    for(const key of ['platform','category','audience','service','tone','cta','headline','hashtags','imagePrompt','videoPrompt','batch','week','day']) {
       const val=data?.[key];
       if(val !== undefined) { if(typeof val!=='string'||val.length>3000) throw fail(400,'Invalid content details.'); out[key]=val.trim(); }
     }
@@ -85,13 +95,41 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
     close: async () => { stopped=true; clearInterval(timer); await Promise.allSettled([...tasks]); },
     async route(req,res,path,role) {
       const owner=()=>{if(role!=='owner') throw fail(403,'Only the owner can change this setting.');};
+      if(path==='/api/weekly-plan' && req.method==='POST') {
+        owner(); const data=await body(req);
+        const goal=requiredText(data.goal,1500), availability=requiredText(data.availability,1000);
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(data.week)||!Number.isFinite(Date.parse(data.week))||new Date(data.week).toISOString().slice(0,10)!==data.week)throw fail(400,'Choose a valid week start date.');
+        if(typeof data.budget!=='number'||!Number.isFinite(data.budget)||data.budget<0||data.budget>1000000)throw fail(400,'Enter a valid weekly budget.');
+        if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure OpenAI before creating a weekly plan.');
+        if(managerBusy)throw fail(409,'A weekly plan is already being prepared.');
+        quota('weekly plans',4);managerBusy=true;
+        try {
+          const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:'Hindi',profile:profile(),agent:{id:'manager',name:'Weekly marketing manager',instruction:'Return ONLY a JSON object with an items array of exactly seven entries. Each entry has title, content (ready to review Hindi caption or video storyboard), platform (Facebook, Instagram, WhatsApp or Video), agent (content, whatsapp or video), and day (integer 0 through 6, unique). Respect the supplied availability and budget; no invented offers. These are assigned drafts, not executed tasks. Include clinic contact details. Override the plain text formatting instruction with JSON for this structured task.'},brief:JSON.stringify({goal,availability,weeklyBudgetINR:data.budget,week:data.week})});
+          let plan;try{plan=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{throw fail(502,'The manager returned an invalid plan. No drafts were saved.');}
+          if(!Array.isArray(plan.items)||plan.items.length!==7||new Set(plan.items.map(x=>x.day)).size!==7)throw fail(502,'The manager must return seven unique daily drafts.');
+          for(const x of plan.items){requiredText(x.title,160);requiredText(x.content,20000);if(!Number.isInteger(x.day)||x.day<0||x.day>6||!['content','video','whatsapp'].includes(x.agent)||!['Facebook','Instagram','WhatsApp','Video'].includes(x.platform))throw fail(502,'Invalid task in the generated plan.');}
+          const batch=randomUUID();db.exec('BEGIN');
+          try {for(const x of plan.items){const d=draft({title:x.title,content:x.content,agent:x.agent,language:'Hindi',brief:JSON.stringify({goal,availability,budget:data.budget,week:data.week,day:x.day}),meta:{platform:x.platform,category:'Weekly plan',batch,week:data.week,day:String(x.day)}});db.prepare("UPDATE drafts SET status='pending' WHERE id=?").run(d.id);}audit('weekly_plan_created',batch);db.exec('COMMIT');}catch(err){db.exec('ROLLBACK');throw err;}
+          json(res,201,{batch,count:7});
+        } finally {managerBusy=false;}
+        return true;
+      }
+      if(path==='/api/approval-batch' && req.method==='POST') {
+        owner();const data=await body(req);
+        if(!['approve','reject'].includes(data.action)||!Array.isArray(data.items)||!data.items.length||data.items.length>100)throw fail(400,'Select up to 100 pending drafts.');
+        if(new Set(data.items.map(x=>x.id)).size!==data.items.length)throw fail(400,'Duplicate selections.');
+        db.exec('BEGIN');try{for(const item of data.items){const d=db.prepare('SELECT * FROM drafts WHERE id=?').get(item.id);if(!d||d.status!=='pending'||d.version!==item.version)throw fail(409,'A selected draft changed. Refresh and review again.');db.prepare('UPDATE drafts SET status=?,version=version+1 WHERE id=?').run(data.action==='approve'?'approved':'draft',item.id);audit(data.action,item.id);}db.exec('COMMIT');}catch(err){db.exec('ROLLBACK');throw err;}
+        json(res,200,{count:data.items.length});return true;
+      }
       if(path==='/api/profile' && req.method==='PUT') {
         owner(); const data=await body(req), old=profile();
-        for(const [k, max] of Object.entries({name:120,hindiName:120,phone:30,address:300,services:1000,hours:200,guidelines:2000})) {
+        for(const [k, max] of Object.entries({bookingUrl:1000,name:120,hindiName:120,phone:30,address:300,services:1000,hours:200,guidelines:2000})) {
+          if(k==='bookingUrl' && data[k]===undefined) continue;
           if(typeof data[k]!=='string'||data[k].length>max) throw fail(400,`Invalid ${k}.`);
           if(['name','hindiName','phone','address'].includes(k) && !data[k].trim()) throw fail(400,`${k} is required.`);
           old[k]=data[k].trim();
         }
+        if(old.bookingUrl) {let u;try{u=new URL(old.bookingUrl);}catch{throw fail(400,'Enter a valid booking URL.');}if(u.protocol!=='https:'||u.username||u.password)throw fail(400,'Booking link must use HTTPS.');}
         if(!/^\+?[\d ()-]{7,25}$/.test(old.phone)) throw fail(400,'Enter a valid clinic phone number.');
         db.prepare('INSERT OR REPLACE INTO profile VALUES(1,?)').run(JSON.stringify(old)); audit('profile_updated'); json(res,200,old); return true;
       }

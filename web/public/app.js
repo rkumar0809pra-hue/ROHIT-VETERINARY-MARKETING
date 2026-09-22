@@ -21,6 +21,8 @@ const esc = (value) =>
   );
 const names = {
   dashboard: "Overview",
+  manager: "Marketing manager",
+  approvals: "Approval inbox",
   creator: "Content Creator",
   video: "Video Maker",
   images: "Poster & media",
