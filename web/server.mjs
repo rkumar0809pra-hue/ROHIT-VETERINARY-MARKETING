@@ -10,6 +10,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agents, generate } from "./agents.mjs";
+import { createStudio } from "./studio.mjs";
 const root = dirname(fileURLToPath(import.meta.url));
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const hash = (value) => createHash("sha256").update(value).digest();
@@ -18,14 +19,16 @@ const requiredText = (value, max) => {
     throw fail(400, `Text must contain 1–${max} characters.`);
   return value.trim();
 };
-async function body(req) {
+async function body(req, limit = 160000) {
   if (!req.headers["content-type"]?.startsWith("application/json"))
     throw fail(415, "JSON required.");
-  let raw = "";
+  const chunks=[]; let bytes=0;
   for await (const chunk of req) {
-    raw += chunk;
-    if (Buffer.byteLength(raw) > 40000) throw fail(413, "Request too large.");
+    bytes += chunk.length;
+    if (bytes > limit) throw fail(413, "Request too large.");
+    chunks.push(chunk);
   }
+  const raw=Buffer.concat(chunks).toString("utf8");
   try {
     const value = JSON.parse(raw);
     if (!value || Array.isArray(value) || typeof value !== "object")
@@ -35,13 +38,16 @@ async function body(req) {
     throw fail(400, "Invalid JSON.");
   }
 }
-export function createApp({ env = process.env, generateImpl = generate } = {}) {
+export function createApp({ env = process.env, generateImpl = generate, provider } = {}) {
   if (
     !env.ADMIN_PASSWORD ||
     env.ADMIN_PASSWORD.length < 16 ||
     env.ADMIN_PASSWORD === "replace-with-a-unique-long-password"
   )
     throw Error("Set ADMIN_PASSWORD to at least 16 characters.");
+  const credentials = { owner: env.ADMIN_PASSWORD, staff: env.STAFF_PASSWORD, creator: env.CREATOR_PASSWORD };
+  const configured = Object.values(credentials).filter(Boolean);
+  if(configured.some(p => p.length < 16) || new Set(configured).size !== configured.length) throw Error("Role passwords must be distinct and at least 16 characters.");
   const origin = new URL(env.APP_ORIGIN || "http://localhost:3000").origin;
   if (
     !origin.startsWith("https:") &&
@@ -84,7 +90,9 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
     });
     res.end(JSON.stringify(data));
   };
+  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider});
   const files = {
+    "/studio-ui.js": ["studio-ui.js", "text/javascript"],
     "/": ["index.html", "text/html"],
     "/app.js": ["app.js", "text/javascript"],
     "/styles.css": ["styles.css", "text/css"],
@@ -103,7 +111,7 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     );
     try {
       const path = new URL(req.url, origin).pathname;
@@ -123,16 +131,18 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
         if (++loginWindow.count > 15)
           throw fail(429, "Too many login attempts. Wait a minute.");
         const data = await body(req);
+        const role = data.role || "owner";
         if (
+          !credentials[role] ||
           typeof data.password !== "string" ||
-          !timingSafeEqual(hash(data.password), hash(env.ADMIN_PASSWORD))
+          !timingSafeEqual(hash(data.password), hash(credentials[role]))
         )
           throw fail(401, "Incorrect password.");
-        for (const [key, expiry] of sessions)
-          if (expiry < Date.now()) sessions.delete(key);
+        for (const [key, session] of sessions)
+          if (session.expiry < Date.now()) sessions.delete(key);
         if (sessions.size >= 100) sessions.delete(sessions.keys().next().value);
         const token = randomBytes(32).toString("hex");
-        sessions.set(hash(token).toString("hex"), Date.now() + 8 * 3600000);
+        sessions.set(hash(token).toString("hex"), {expiry: Date.now() + 8 * 3600000, role});
         res.setHeader(
           "Set-Cookie",
           `rvh_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${origin.startsWith("https:") ? "; Secure" : ""}`,
@@ -144,8 +154,10 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
           req.headers.cookie || "",
         )?.[1] || "";
       const sessionKey = hash(token).toString("hex");
-      if ((sessions.get(sessionKey) || 0) <= Date.now())
+      if ((sessions.get(sessionKey)?.expiry || 0) <= Date.now())
         throw fail(401, "Please sign in.");
+      const role=sessions.get(sessionKey).role;
+      if(await studio.route(req,res,path,role)) return;
       if (path === "/api/logout" && req.method === "POST") {
         sessions.delete(sessionKey);
         res.setHeader(
@@ -156,6 +168,9 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
       }
       if (path === "/api/state" && req.method === "GET")
         return json(res, 200, {
+          ...studio.state(),
+          role,
+          rolesConfigured: { staff: Boolean(env.STAFF_PASSWORD), creator: Boolean(env.CREATOR_PASSWORD) },
           agents: agents.map(({ instruction, ...agent }) => agent),
           aiConfigured: Boolean(env.OPENAI_API_KEY && env.OPENAI_MODEL),
           model: env.OPENAI_MODEL || null,
@@ -168,6 +183,7 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
           metrics: metrics(),
         });
       if (path === "/api/metrics" && req.method === "PUT") {
+        if(role === "creator") throw fail(403,"Only the owner or marketing staff can update metrics.");
         const data = await body(req);
         for (const k of ["spend", "clicks", "leads", "revenue"])
           if (
@@ -210,6 +226,7 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
         if (!agent || !["English", "Hindi", "Hinglish"].includes(data.language))
           throw fail(400, "Choose a valid agent and language.");
         const brief = requiredText(data.brief, 6000);
+        const draftMeta = JSON.stringify(studio.metadata(data.meta));
         if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL)
           throw fail(
             503,
@@ -239,6 +256,7 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
               language: data.language,
               brief,
               metrics: metrics(),
+              profile: studio.profile(),
             }),
             20000,
           );
@@ -255,6 +273,7 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
               content,
               now,
             );
+            db.prepare("UPDATE drafts SET meta_json=? WHERE id=?").run(draftMeta,id);
             db.prepare("UPDATE runs SET status='completed' WHERE id=?").run(id);
             audit("agent_draft_created", id);
             db.exec("COMMIT");
@@ -289,12 +308,16 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
             409,
             "This draft changed on another device. Reload and try again.",
           );
-        let { title, content, status, planned_at } = old;
+        if (["approve","reject"].includes(data.action) && role !== "owner") throw fail(403,"Only the owner can approve or reject content.");
+        if (["plan","unplan","publish","results"].includes(data.action) && role === "creator") throw fail(403,"Only the owner or marketing staff can manage publishing and results.");
+        let { title, content, status, planned_at, meta_json, published_at, published_url, metrics_json } = old;
         if (data.action === "edit") {
           title = requiredText(data.title, 160);
           content = requiredText(data.content, 20000);
           status = "draft";
           planned_at = null;
+          published_at = null; published_url = null;
+          if(data.meta !== undefined) meta_json=JSON.stringify(studio.metadata(data.meta));
         } else if (data.action === "submit" && status === "draft")
           status = "pending";
         else if (data.action === "approve" && status === "pending")
@@ -316,10 +339,24 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
         } else if (data.action === "unplan" && status === "planned") {
           status = "approved";
           planned_at = null;
+        } else if(data.action === "publish" && ["approved","planned"].includes(status)) {
+          if(data.confirmPublished !== true) throw fail(400,"Confirm you published this content yourself.");
+          const url=requiredText(data.url,1000); let parsed;
+          try{parsed=new URL(url);}catch{throw fail(400,"Enter the published post's HTTPS link.");}
+          if(parsed.protocol!=="https:" || parsed.username || parsed.password) throw fail(400,"Use an HTTPS link.");
+          published_url=url; published_at=new Date().toISOString(); status="published"; planned_at=null;
+        } else if(data.action === "results") {
+          const result={};
+          for(const key of ["spend","clicks","leads","revenue","sent","failed","responses"]) {
+            const value=data.metrics?.[key];
+            if(typeof value!=="number" || !Number.isFinite(value) || value<0 || value>1e10 || (!["spend","revenue"].includes(key)&&!Number.isInteger(value))) throw fail(400,"Enter valid nonnegative campaign results.");
+            result[key]=value;
+          }
+          result.period=requiredText(data.metrics.period,160);result.updated_at=new Date().toISOString();metrics_json=JSON.stringify(result);
         } else throw fail(409, "That action is not available for this draft.");
         db.prepare(
-          "UPDATE drafts SET title=?,content=?,status=?,planned_at=?,version=version+1 WHERE id=?",
-        ).run(title, content, status, planned_at, old.id);
+          "UPDATE drafts SET title=?,content=?,status=?,planned_at=?,meta_json=?,published_at=?,published_url=?,metrics_json=?,version=version+1 WHERE id=?",
+        ).run(title, content, status, planned_at, meta_json, published_at, published_url, metrics_json, old.id);
         audit(data.action, old.id);
         return json(res, 200, getDraft(old.id));
       }
@@ -332,7 +369,7 @@ export function createApp({ env = process.env, generateImpl = generate } = {}) {
       else res.end();
     }
   });
-  server.on("close", () => db.close());
+  server.on("close", () => { studio.close().then(() => db.close()); });
   server.requestTimeout = 100000;
   return server;
 }

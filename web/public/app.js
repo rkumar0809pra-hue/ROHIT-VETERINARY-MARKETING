@@ -1,3 +1,4 @@
+import { renderStudio, extraNames, extraIcons, studioInput, studioChange, studioClick, studioSubmit, profileSection, editorExtras, campaignAnalytics, libraryPage } from "/studio-ui.js";
 const app = document.querySelector("#app");
 let state,
   page = "dashboard",
@@ -20,13 +21,19 @@ const esc = (value) =>
   );
 const names = {
   dashboard: "Overview",
+  creator: "Content Creator",
+  video: "Video Maker",
+  images: "Poster & media",
+  whatsapp: "WhatsApp",
   agents: "Agent workspace",
+  chat: "AI Assistant",
   library: "Content library",
   calendar: "Publishing plan",
   analytics: "Analytics",
   settings: "Settings",
 };
 const icons = {
+  ...extraIcons(),
   dashboard: "▦",
   agents: "✧",
   library: "▤",
@@ -39,6 +46,9 @@ const statusLabel = {
   pending: "Needs approval",
   approved: "Approved",
   planned: "Planned",
+  published: "Published",
+  starting: "Starting",
+  processing: "Generating",
   running: "Working",
   completed: "Completed",
   failed: "Failed",
@@ -79,6 +89,7 @@ async function api(path, method = "GET", data) {
 async function refresh() {
   state = await api("state");
 }
+function context() { return { state, page, filter, draftId, esc, date, pill, list, statusLabel, api, refresh, render, notice, go: (next,id) => {page=next; if(id)draftId=id;menu=false;render();} }; }
 function agentName(id) {
   return state.agents.find((a) => a.id === id)?.name || "Manual draft";
 }
@@ -100,11 +111,12 @@ function list(items) {
     : '<div class="card empty"><strong>Your next campaign starts here</strong>Create a draft yourself or give an agent a brief.</div>';
 }
 function dashboard() {
-  return `<div class="heading"><div><div class="eyebrow">Rohit Veterinary House · Lohardaga</div><h1>Your marketing, together.</h1><p>A focused workspace to create, review and plan.</p></div><button class="primary" data-new>+ New draft</button></div><section class="hero"><div><div class="eyebrow">Your AI marketing team</div><h2>One goal. Six specialist agents.</h2><p>Start with an idea for your clinic, pet owners or farmers. Your agents turn it into clear content ready for your review.</p><button class="primary" data-page="agents">Meet your agents ↗</button></div><div class="hero-mark" aria-hidden="true">✧</div></section><div class="stats">${[
+  return `<div class="heading"><div><div class="eyebrow">Rohit Veterinary House · Lohardaga</div><h1>Your marketing, together.</h1><p>A focused workspace to create, review and plan.</p></div><button class="primary" data-new>+ New draft</button></div><section class="hero"><div><div class="eyebrow">Your AI marketing team</div><h2>One goal. Your complete marketing studio.</h2><p>Start with an idea for your clinic, pet owners or farmers. Your agents turn it into clear content ready for your review.</p><button class="primary" data-page="agents">Meet your agents ↗</button></div><div class="hero-mark" aria-hidden="true">✧</div></section><div class="stats">${[
     ["Drafts", "draft"],
     ["Needs approval", "pending"],
     ["Approved", "approved"],
     ["Planned", "planned"],
+    ["Published", "published"],
   ]
     .map(
       ([label, s]) =>
@@ -112,7 +124,7 @@ function dashboard() {
     )
     .join(
       "",
-    )}</div><div class="section-title"><h2>Your agents</h2><span class="note">On demand · Human reviewed</span></div>${cards()}<div class="section-title"><h2>Recent drafts</h2><button data-page="library">View all →</button></div>${list(state.drafts.slice(0, 4))}`;
+    )}</div><div class="section-title"><h2>Your agents</h2><span class="note">On demand · Human reviewed</span></div><div class="actions quick-actions"><button data-page="creator">Create a post</button><button data-page="images">Create a poster</button><button data-page="video">Generate a video</button><button data-page="whatsapp">WhatsApp campaign</button><button data-page="chat">Ask the assistant</button></div>${cards()}<div class="section-title"><h2>Recent drafts</h2><button data-page="library">View all →</button></div>${list(state.drafts.slice(0, 4))}`;
 }
 function agentPage() {
   const a = state.agents.find((a) => a.id === selected);
@@ -121,7 +133,7 @@ function agentPage() {
 function editor() {
   const d = state.drafts.find((d) => d.id === draftId);
   if (!d) return "<p>Draft not found. Reload the library.</p>";
-  return `<div class="heading"><div><button data-page="library">← Content library</button><h1>Review your draft</h1></div>${pill(d.status)}</div><div class="split"><form id="edit-form" class="card"><label for="title">Title</label><input id="title" maxlength="160" value="${esc(d.title)}" required><label for="content">Content</label><textarea class="editor" id="content" maxlength="20000" required>${esc(d.content)}</textarea><p class="note">Saving an edit returns the item to Draft and clears any publishing plan. Submit it again for approval.</p><button class="primary">Save changes</button></form><section class="card"><div class="eyebrow">Review & handoff</div><h2>${esc(agentName(d.agent))}</h2><p>${esc(d.language)} · ${date(d.created_at)}</p><div class="actions">${d.status === "draft" ? '<button class="primary" data-action="submit">Submit for approval</button>' : ""}${d.status === "pending" ? '<button class="primary" data-action="approve">Approve draft</button><button data-action="reject">Return to draft</button>' : ""}${["approved", "planned"].includes(d.status) ? "<button data-copy>Copy approved content</button>" : ""}<button data-review>Send to quality reviewer</button></div>${["approved", "planned"].includes(d.status) ? `<form id="plan-form"><label for="planned">Plan publication (your device timezone)</label><input id="planned" type="datetime-local" required><button class="primary">Save publishing plan</button></form>${d.planned_at ? `<p>Planned: ${date(d.planned_at)}</p><button data-action="unplan">Remove from plan</button>` : ""}` : ""}<p class="note">Publishing plans do not send posts automatically. Copy approved content to your chosen platform. Your edits must be saved before using review actions.</p><details><summary>Original brief</summary><p class="output">${esc(d.brief || "Written manually.")}</p></details></section></div>`;
+  return `<div class="heading"><div><button data-page="library">← Content library</button><h1>Review your draft</h1></div>${pill(d.status)}</div><div class="split"><form id="edit-form" class="card"><label for="title">Title</label><input id="title" maxlength="160" value="${esc(d.title)}" required><label for="content">Content</label><textarea class="editor" id="content" maxlength="20000" required>${esc(d.content)}</textarea><p class="note">Saving an edit returns the item to Draft and clears any publishing plan. Submit it again for approval.</p><button class="primary">Save changes</button></form><section class="card"><div class="eyebrow">Review & handoff</div><h2>${esc(agentName(d.agent))}</h2><p>${esc(d.language)} · ${date(d.created_at)}</p><div class="actions">${d.status === "draft" ? '<button class="primary" data-action="submit">Submit for approval</button>' : ""}${d.status === "pending" && state.role === "owner" ? '<button class="primary" data-action="approve">Approve draft</button><button data-action="reject">Return to draft</button>' : ""}${["approved", "planned", "published"].includes(d.status) ? "<button data-copy>Copy approved content</button>" : ""}<button data-review>Send to quality reviewer</button></div>${["approved", "planned"].includes(d.status) && state.role !== "creator" ? `<form id="plan-form"><label for="planned">Plan publication (India Standard Time)</label><input id="planned" type="datetime-local" required><button class="primary">Save publishing plan</button></form>${d.planned_at ? `<p>Planned: ${date(d.planned_at)}</p><button data-action="unplan">Remove from plan</button>` : ""}` : ""}<p class="note">Publishing plans do not send posts automatically. Copy approved content to your chosen platform. Your edits must be saved before using review actions.</p><details><summary>Original brief</summary><p class="output">${esc(d.brief || "Written manually.")}</p></details></section></div>`;
 }
 function newDraft() {
   return '<div class="heading"><h1>Create a draft</h1></div><form id="new-form" class="card"><label for="title">Title</label><input id="title" maxlength="160" required><label for="content">Content</label><textarea id="content" class="editor" maxlength="20000" required></textarea><button class="primary">Save draft</button></form>';
@@ -162,29 +174,27 @@ function analytics() {
     )}</div><div class="actions"><button class="primary">Save totals</button></div></form><div class="card"><h2>Turn results into a next step</h2><p>The performance analyst uses these saved totals and the reporting context you put in the brief. Missing metrics are never filled with sample results.</p><button data-agent="analytics">Open performance analyst ↗</button><p class="note">Revenue / ad spend is ROAS, not profit or ROI. A dash means the inputs needed for that calculation are unavailable.</p></div></div>`;
 }
 function settings() {
-  return `<div class="heading"><h1>Your workspace</h1></div><div class="split"><div class="card"><h2>Desktop & Android</h2><p>Open this same app address on each device to access the shared workspace.</p><button data-install>Install app</button><p class="install-guide">On desktop, use Chrome or Edge’s install app option.<br>On Android, open in Chrome and choose Install app or Add to Home screen.</p><p class="note">Installation requires HTTPS or localhost. The interface opens offline; signing in, drafts and agents require a connection.</p></div><div class="card"><h2>Connections</h2><p>OpenAI agents: <strong>${state.aiConfigured ? "Configured" : "Setup required"}</strong></p><p>Model: ${esc(state.model || "Not configured")}</p><p>Facebook / Instagram publishing: Not connected<br>WhatsApp sending: Not connected</p><p class="note">Server configuration controls API credentials. Never put keys into a campaign brief. This workspace currently has one owner login.</p><button data-logout>Sign out</button></div></div>`;
+  return `<div class="heading"><h1>Your workspace</h1></div><div class="split"><div class="card"><h2>Desktop & Android</h2><p>Open this same app address on each device to access the shared workspace.</p><button data-install>Install app</button><p class="install-guide">On desktop, use Chrome or Edge’s install app option.<br>On Android, open in Chrome and choose Install app or Add to Home screen.</p><p class="note">Installation requires HTTPS or localhost. The interface opens offline; signing in, drafts and agents require a connection.</p></div><div class="card"><h2>Connections</h2><p>OpenAI agents: <strong>${state.aiConfigured ? "Configured" : "Setup required"}</strong></p><p>Model: ${esc(state.model || "Not configured")}</p><p>Facebook / Instagram publishing: Not connected<br>WhatsApp sending: Not connected</p><p class="note">Server configuration controls API credentials. Never put keys into a campaign brief. Team access is configured below.</p><button data-logout>Sign out</button></div></div>`;
 }
 function render() {
   if (!state) {
-    app.innerHTML = `<form id="login-form" class="card login"><img src="/icon.svg" alt="RVH"><div class="eyebrow">Rohit Veterinary House</div><h1>Marketing Studio</h1><p>Your clinic. Your voice.<br>One workspace for every campaign.</p><label for="password">Owner password</label><input type="password" id="password" autocomplete="current-password" required><p role="alert">${esc(loginError)}</p><button class="primary">Sign in →</button><p class="note">Use the owner password configured for this server.</p></form>`;
+    app.innerHTML = `<form id="login-form" class="card login"><img src="/icon.svg" alt="RVH"><div class="eyebrow">Rohit Veterinary House</div><h1>Marketing Studio</h1><p>Your clinic. Your voice.<br>One workspace for every campaign.</p><label for="login-role">Workspace role</label><select id="login-role"><option value="owner">Owner</option><option value="staff">Marketing staff</option><option value="creator">Content creator</option></select><label for="password">Workspace password</label><input type="password" id="password" autocomplete="current-password" required><p role="alert">${esc(loginError)}</p><button class="primary">Sign in →</button><p class="note">Use the password configured for your role.</p></form>`;
     return;
   }
-  const content =
+  const content = renderStudio(page, context()) ?? (
     page === "dashboard"
       ? dashboard()
       : page === "agents"
         ? agentPage()
         : page === "editor"
-          ? editor()
+          ? editor() + `<div class="split studio-extra">${editorExtras(context(),state.drafts.find(d=>d.id===draftId))}</div>`
           : page === "new"
             ? newDraft()
             : page === "analytics"
-              ? analytics()
+              ? analytics() + campaignAnalytics(context())
               : page === "settings"
-                ? settings()
-                : page === "calendar"
-                  ? `<div class="heading"><div><h1>Publishing plan</h1><p>Approved content, organised by planned date. Times shown in IST.</p></div></div><div class="banner">This is a planning calendar. Posts are not sent automatically.</div>${list(state.drafts.filter((d) => d.status === "planned").sort((a, b) => a.planned_at.localeCompare(b.planned_at)))}`
-                  : `<div class="heading"><h1>Content library</h1><button class="primary" data-new>+ New draft</button></div><label for="filter">Filter by status</label><select id="filter" class="filter">${["all", "draft", "pending", "approved", "planned"].map((s) => `<option value="${s}" ${filter === s ? "selected" : ""}>${statusLabel[s] || "All drafts"}</option>`).join("")}</select>${list(state.drafts.filter((d) => filter === "all" || d.status === filter))}`;
+                ? settings() + `<div class="split studio-extra">${profileSection(context())}</div>`
+                : libraryPage(context()));
   app.innerHTML = `<aside class="${menu ? "open" : ""}"><div class="brand"><img src="/icon.svg" alt=""><div><strong>RVH Studio</strong><small>MARKETING WORKSPACE</small></div></div><nav class="nav" aria-label="Main navigation">${Object.entries(
     names,
   )
@@ -194,13 +204,15 @@ function render() {
     )
     .join(
       "",
-    )}</nav><div class="side-bottom">Rohit Veterinary House<br>Lohardaga, Jharkhand<br><button data-logout>Sign out</button></div></aside><div class="shell"><header><button class="mobile-menu" data-menu aria-label="Toggle navigation" aria-expanded="${menu}">☰</button><span class="header-name">Marketing & content operations</span><span class="pill">Dr. Rohit · Owner</span></header><main>${!navigator.onLine ? '<div class="banner offline">You are offline. Reconnect to load or save your work.</div>' : ""}${!state.aiConfigured ? '<div class="banner">AI agents need setup: add your OpenAI key and model to the server configuration. You can create and review manual drafts now.</div>' : ""}${content}</main></div>`;
+    )}</nav><div class="side-bottom">Rohit Veterinary House<br>Lohardaga, Jharkhand<br><button data-logout>Sign out</button></div></aside><div class="shell"><header><button class="mobile-menu" data-menu aria-label="Toggle navigation" aria-expanded="${menu}">☰</button><span class="header-name">Marketing & content operations</span><span class="pill">Dr. Rohit · ${esc(state.role)}</span></header><main>${!navigator.onLine ? '<div class="banner offline">You are offline. Reconnect to load or save your work.</div>' : ""}${!state.aiConfigured ? '<div class="banner">AI agents need setup: add your OpenAI key and model to the server configuration. You can create and review manual drafts now.</div>' : ""}${content}</main></div>`;
 }
 app.addEventListener("input", (e) => {
+  if(state) studioInput(e,context());
   if (e.target.id === "brief") brief = e.target.value;
   if (e.target.id === "language") language = e.target.value;
 });
 app.addEventListener("change", (e) => {
+  if(state) studioChange(e,context());
   if (e.target.id === "agent") {
     selected = e.target.value;
     render();
@@ -215,7 +227,7 @@ app.addEventListener("click", async (e) => {
   if (!el) return;
   if (
     unsavedDraft() &&
-    (el.dataset.action ||
+    (el.dataset.remix || el.dataset.mediaBrief || el.dataset.shareApproved || el.dataset.downloadDraft || el.dataset.action ||
       el.hasAttribute("data-copy") ||
       el.hasAttribute("data-review"))
   ) {
@@ -232,6 +244,7 @@ app.addEventListener("click", async (e) => {
   )
     return;
   try {
+    if(state && await studioClick(el,context())) return;
     if (el.dataset.page) {
       page = el.dataset.page;
       menu = false;
@@ -299,12 +312,15 @@ app.addEventListener("click", async (e) => {
 app.addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
-  const submit = form.querySelector("button");
+  const submit = e.submitter || form.querySelector("button");
   if (submit) submit.disabled = true;
   try {
+    if(state && ["publish-form","results-form"].includes(form.id) && unsavedDraft()) throw Error("Save your draft edits first.");
+    if(state && await studioSubmit(form,e.submitter,context())) return;
     if (form.id === "login-form") {
       await api("login", "POST", {
         password: document.querySelector("#password").value,
+        role: document.querySelector("#login-role").value,
       });
       loginError = "";
       await refresh();
@@ -358,7 +374,7 @@ app.addEventListener("submit", async (e) => {
         action: "plan",
         version: d.version,
         planned_at: new Date(
-          document.querySelector("#planned").value,
+          document.querySelector("#planned").value + ":00+05:30",
         ).toISOString(),
       });
       notice("Publishing plan saved.");

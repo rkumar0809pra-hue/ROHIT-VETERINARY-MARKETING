@@ -1,6 +1,6 @@
 # RVH Marketing Studio — desktop & Android PWA
 
-A first working, single-owner marketing workspace. It runs in a desktop browser or installs as a PWA on desktop and Android. Both devices use the same server database.
+A shared veterinary marketing workspace with owner, marketing staff and content creator roles. It runs in a desktop browser or installs as a PWA on desktop and Android. Both devices use the same server database.
 
 ## Included
 
@@ -9,7 +9,7 @@ A first working, single-owner marketing workspace. It runs in a desktop browser 
 - Hindi, English and Hinglish output; editable drafts; approval queue; manual publishing plan.
 - Persisted SQLite drafts, runs, metrics and audit events. Optimistic version checking prevents a stale device from overwriting a saved change.
 - Manual aggregate metrics and calculated cost per lead / revenue-to-ad-spend ratio. No fabricated demo performance.
-- One owner password, expiring HttpOnly sessions, same-origin mutation checks, server-side approval transitions, login throttling, bounded AI concurrency and hourly run limit.
+- Role passwords, expiring HttpOnly sessions, same-origin mutation checks, server-side approval transitions, login throttling, bounded AI concurrency and hourly run limit.
 - Offline application shell. Customer content and API responses are not cached by the service worker. Saving, reading drafts, login and AI require the server.
 
 ## Run locally
@@ -53,7 +53,7 @@ docker run --env-file web/.env -e HOST=0.0.0.0 \
 
 Set the production HTTPS `APP_ORIGIN` in `web/.env` before starting this container. The container does not itself terminate TLS. Keep `.env` and database backups private. Back up SQLite using its online backup API, or stop the server before copying the database and WAL files together. Test restoration before relying on backups.
 
-Do **not** deploy the current SQLite store on an ephemeral or multi-instance serverless filesystem, including default Cloud Run instances. For Cloud Run, first replace SQLite with a managed shared database and replace in-memory sessions and rate limits with shared storage. Restarting this version expires owner sessions and resets rate-limit windows.
+Do **not** deploy the current SQLite store on an ephemeral or multi-instance serverless filesystem, including default Cloud Run instances. For Cloud Run, first replace SQLite with a managed shared database and replace in-memory sessions and rate limits with shared storage. Restarting expires sessions and resets text-agent hourly limits. Media and chat daily quotas are persisted.
 
 After HTTPS deployment:
 
@@ -68,21 +68,24 @@ This produces an installed PWA, not a signed APK/AAB or Play Store listing. The 
 1. Select a specialist, language and brief. Agents run on demand, with a maximum of two simultaneous runs and 30 runs per server hour.
 2. Review the saved result in the library and edit it.
 3. Submit it for approval, then approve as the owner.
-4. Copy approved content to the destination platform, or add a future publishing plan. Calendar times are displayed in IST; date input uses your device timezone.
+4. Copy approved content to the destination platform, or add a future publishing plan. Calendar times are displayed in IST; date input also uses IST.
 5. Enter campaign totals for one consistent reporting period in Analytics. The analyst can use the saved totals plus the period/context supplied in its brief.
 
 Editing approved or planned content returns it to Draft and clears the plan. The quality agent gives advisory feedback; it cannot approve content. A failed or interrupted AI call is recorded as failed, without pretending a draft was generated.
 
-## Explicit limits / next integration work
+## Studio tools and connections
 
-- Agents generate text and scripts; they do not render images or videos.
-- No autonomous background agent runner or social publishing worker is present.
-- Facebook, Instagram and WhatsApp delivery are not connected. The calendar is a publishing plan, not an automatic scheduler. No send/publish API is exposed.
-- Add Meta OAuth / WhatsApp Business provider credentials, consent records, approved templates, delivery receipts, retries and an approval-checked job queue before implementing actual sending.
-- There is one owner account; staff identity and role-based access are not implemented. Do not share the owner password with staff if they should not approve drafts.
-- Analytics totals are manually supplied, not automatically imported or broken down by campaign. No CRM customer data integration is included.
-- Existing Android Room data and Gemini workflows are not migrated. The new web app uses OpenAI only; Gemini/Claude fallback is future integration work.
-- Live provider generation must be smoke-tested with the deployment's configured key/model. Automated tests use a stub and cannot verify account billing or model access.
+Content Creator, WhatsApp campaigns, Video Maker, Poster & media, AI Assistant, searchable library, an IST calendar and campaign analytics are now available. See [the source-port feature map](IMPORT_NOTES.md) for exact capabilities and limits.
+
+- Save clinic name, phone, address and brand rules in Settings. Every agent uses this profile.
+- For real Veo video clips, set `GEMINI_API_KEY` in Render Environment. `VEO_MODEL` defaults to `veo-3.1-fast-generate-preview`. Paid Google API access is required.
+- For images, the existing `OPENAI_API_KEY` is used with `OPENAI_IMAGE_MODEL` (default `gpt-image-1`); model access is required. A free local branded-poster template is also included.
+- Media generation is asynchronous, with saved jobs and private downloads. Keep media storage on the persistent disk. Back up both database and media files.
+- Optional `STAFF_PASSWORD` and `CREATOR_PASSWORD` must be distinct, at least 16 characters. Only the owner approves content or changes settings. Staff can plan approved content and record results; creators draft and submit. These are shared role logins, not individual employee accounts.
+- Facebook, Instagram and WhatsApp delivery remain unconnected. Plans do not automatically send posts. Copy/share approved content and record publication manually.
+- Analytics are manually entered. No fabricated sample results or automatic CRM imports.
+- Native Android data is not in the source export and is not imported. The existing Android client remains separate.
+- Provider generation must be checked using your own account; automated tests do not spend API credits.
 
 ## Verify
 
