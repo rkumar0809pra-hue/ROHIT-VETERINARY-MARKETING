@@ -10,7 +10,7 @@ const png=readFileSync(new URL('../public/icon-192.png',import.meta.url));
 async function fixture(t,options={}){
  const dir=mkdtempSync(join(tmpdir(),'rvh-studio-test-'));
  const env={VIDEO_BRANDING:'off',ADMIN_PASSWORD:password,STAFF_PASSWORD:'staff-test-password-long',CREATOR_PASSWORD:'creator-test-password-long',APP_ORIGIN:'http://localhost:3000',DATA_FILE:join(dir,'db.sqlite'),...options.env};
- const server=createApp({env,generateImpl:options.generateImpl,provider:options.provider});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const server=createApp({env,generateImpl:options.generateImpl,provider:options.provider,renderAdvertisementImpl:options.renderAdvertisementImpl});await new Promise(r=>server.listen(0,'127.0.0.1',r));
  t.after(async()=>{await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});});
  let cookie='';const base=`http://127.0.0.1:${server.address().port}`;
  async function req(path,method='GET',data,headers={}){const r=await fetch(base+'/api/'+path,{method,headers:{origin:env.APP_ORIGIN,cookie,...(data?{'content-type':'application/json'}:{}),...headers},body:data?JSON.stringify(data):undefined});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return r;}
@@ -72,4 +72,51 @@ test('weekly drafts and batch approval enforce permissions and stale-version ato
  assert.equal((await f.call('approval-batch','POST',{action:'approve',items})).status,200);
  assert.ok((await f.call('state')).data.drafts.every(d=>d.status==='approved'));
  assert.equal((await f.call('profile','PUT',{...state.profile,bookingUrl:'javascript:alert(1)'})).status,400);
+});
+
+test('advertisement workflow guards spend, preserves clips, pauses failures, and assembles once',async t=>{
+ let starts=0,speech=0,renders=0,failSpeech=true;
+ const mp4=Buffer.from('00000018667479706d70343200000000','hex');
+ const f=await fixture(t,{env:{OPENAI_API_KEY:'mock',OPENAI_MODEL:'mock',GEMINI_API_KEY:'mock'},
+  generateImpl:async()=>JSON.stringify({scenes:Array.from({length:4},()=>({prompt:'A calm dog at the clinic',narration:'अपने पशु की देखभाल करें।'}))}),
+  provider:{startVideo:async()=>`operations/scene-${++starts}`,pollVideo:async()=> 'https://generativelanguage.googleapis.com/video',downloadVideo:async()=>mp4,speech:async()=>{speech++;if(failSpeech){failSpeech=false;throw Error('quota');}return Buffer.alloc(48000);}},
+  renderAdvertisementImpl:async args=>{renders++;assert.equal(args.scenes.length,4);assert.equal(args.profile.phone,'9709095993');return mp4;}});
+ await f.login('creator');const request={title:'Clinic ad',topic:'Clinic care',duration:30,ratio:'9:16',language:'Hindi'};
+ assert.equal((await f.call('advertisements','POST',request)).status,403);
+ await f.login();let ad=(await f.call('advertisements','POST',request)).data;assert.equal(ad.status,'draft');assert.equal(starts,0);
+ const state=async()=>{await new Promise(r=>setTimeout(r,5));return (await f.call('state')).data;};
+ const current=async()=> (await state()).advertisements.find(a=>a.id===ad.id);
+ assert.equal((await f.call(`advertisements/${ad.id}/start`,'POST',{version:ad.version})).status,400);
+ assert.equal((await f.call(`advertisements/${ad.id}`,'PUT',{...ad,version:99})).status,409);
+ assert.equal((await f.call(`advertisements/${ad.id}`,'PUT',{...ad,scenes:ad.scenes.map(s=>({...s,mode:'still'}))})).status,400);
+ let started=await f.call(`advertisements/${ad.id}/start`,'POST',{version:ad.version,confirmCost:true});assert.equal(started.status,202);
+ assert.equal((await f.call(`advertisements/${ad.id}/start`,'POST',{version:ad.version,confirmCost:true})).status,409);
+ for(let i=0;i<12;i++){
+  const s=await state();for(const m of s.media.filter(m=>m.status==='processing'))await f.call('media/'+m.id+'/check','POST',{});
+  await f.call(`advertisements/${ad.id}/check`,'POST',{});ad=await current();if(ad.status==='paused')break;
+ }
+ assert.equal(ad.status,'paused');assert.equal(starts,4);assert.equal(speech,1);assert.equal(renders,0);
+ assert.equal((await f.call('media/'+ad.scenes[0].mediaId,'DELETE')).status,409);
+ assert.equal((await f.call(`advertisements/${ad.id}`,'PUT',ad)).status,409);
+ assert.equal((await f.call(`advertisements/${ad.id}/start`,'POST',{version:ad.version,confirmCost:true})).status,202);
+ for(let i=0;i<20;i++){ad=await current();if(ad.status==='completed')break;}
+ assert.equal(ad.status,'completed');assert.equal(starts,4);assert.equal(speech,5);assert.equal(renders,1);
+ await f.call(`advertisements/${ad.id}/check`,'POST',{});assert.equal(renders,1);
+ const file=await f.req('media/'+ad.resultId+'/file');assert.deepEqual(Buffer.from(await file.arrayBuffer()),mp4);
+ const finished=ad.resultId;assert.equal((await f.call(`advertisements/${ad.id}`,'DELETE')).status,200);assert.equal((await f.req('media/'+finished+'/file')).status,200);
+});
+
+test('speech provider uses bounded PCM, server credentials, and approved voice input',async()=>{
+ let body;const p=mediaProvider({OPENAI_API_KEY:'test'},async(url,opts)=>{assert.equal(url,'https://api.openai.com/v1/audio/speech');assert.equal(opts.headers.Authorization,'Bearer test');body=JSON.parse(opts.body);return new Response(Buffer.alloc(48000));});
+ assert.equal((await p.speech({text:'नमस्ते',language:'Hindi',voice:'coral'})).length,48000);assert.equal(body.response_format,'pcm');assert.equal(body.input,'नमस्ते');
+});
+
+test('advertisement restart pauses paid work and retains a known operation',async()=>{
+ const {DatabaseSync}=await import('node:sqlite');const {createAdvertisements}=await import('../advertisements.mjs');const db=new DatabaseSync(':memory:');
+ const args={db,env:{GEMINI_API_KEY:'mock'},isStopped:()=>false,profile:()=>({}),fail:(status,message)=>Object.assign(Error(message),{status}),getMedia:()=>({status:'processing',operation:'operations/saved'}),track:p=>p,audit:()=>{},room:()=>{},quota:()=>{}};
+ let starts=0;args.provider={startVideo:async()=>{starts++;}};
+ createAdvertisements(args);
+ db.prepare('INSERT INTO advertisements VALUES(?,?,?,?,?,?,?,?)').run('test','Ad','generating',JSON.stringify({scenes:[{mode:'veo',mediaId:'known'}]}),1,null,'2026-09-23','2026-09-23');
+ const restarted=createAdvertisements(args);assert.equal(restarted.list()[0].status,'paused');await restarted.tick();assert.equal(starts,0);
+ db.prepare("UPDATE advertisements SET status='generating'").run();await restarted.tick();assert.equal(starts,0);assert.equal(restarted.list()[0].scenes[0].mediaId,'known');db.close();
 });

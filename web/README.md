@@ -104,3 +104,17 @@ Render Node build command: `npm ci && npm test`. Start: `npm start`.
 Settings includes an optional HTTPS booking URL. Marketing manager creates seven daily Hindi drafts from confirmed goals, availability and budget (four plans per day). Approval inbox provides owner-only batch approval with stale-version protection. Tasks are assigned drafts, not independently executed social jobs. No automatic sending or booking is enabled.
 
 New Veo clips receive a four-second branded contact ending; existing videos are unchanged. Install dependencies with npm ci. If branding fails, the original clip is saved with a warning. Set VIDEO_BRANDING=off to disable. Speech transcription, subtitles and custom logo uploads are not included.
+
+## Complete advertisements (Video Maker)
+
+Owners can prepare an editable 30- or 60-second advertisement, review it, and authorise its remaining paid requests. Thirty seconds uses four scenes (8/6/6/6 seconds) plus a four-second clinic card; sixty seconds uses seven eight-second scenes plus the card. Each scene can use a Veo clip, optionally starting from a saved photo, or a saved photo/screenshot unchanged. This preserves real signage and app screens. Reference photos do not guarantee presenter identity or lip sync.
+
+The worker processes one advertisement at a time, records Veo operation IDs, polls existing jobs, and never automatically repeats failed paid requests. Restarted advertisements pause for owner review. Continue reuses saved clips and narration; failed/ambiguous requests require renewed authorisation. Pause stops future requests; a request already sent may complete and be billed. Completed projects remain private until downloaded and manually published. Remove a project to release its intermediate clips/audio; its finished video and uploaded photos stay.
+
+OpenAI speech uses `OPENAI_API_KEY` and optional `OPENAI_TTS_MODEL` (default `gpt-4o-mini-tts`). Built-in coral/onyx voices are available. Per-scene PCM audio is saved, fitted to its scene without clipping speech, and replaces the Veo audio. Long speech pauses assembly; the owner can continue silently. Scene-level captions are burned into a dedicated panel using the bundled Devanagari font. An AI-voice disclosure is included. No background music or word-by-word karaoke timing is added. Review pronunciation and visuals before use.
+
+Output is 720p MP4, with a snapshot of the saved clinic identity. Render needs the existing ffmpeg-static/sharp dependencies; keep build `npm ci && npm test` and start `npm start`. Intermediate and finished media count against the 600 MB app storage limit. Generation caps remain 12 video/image requests per rolling day; narration has a 30-request daily cap. A 60-second project can exceed the remaining quota and pause until it resets. Leave storage headroom for seven clips plus the finished render.
+
+The displayed video-only USD estimate uses the configured supported Veo model and published 720p rates checked 2026-09-23. It excludes OpenAI script/speech charges, taxes, and previous attempts; it is not a billing cap. Unknown models show requested seconds without an invented monetary estimate.
+
+API references: https://ai.google.dev/gemini-api/docs/pricing and https://developers.openai.com/api/docs/guides/text-to-speech . Tests use fake provider responses; no paid generation is performed by the test suite.

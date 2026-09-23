@@ -1,3 +1,4 @@
+import { createAdvertisements } from './advertisements.mjs';
 import { brandVideo } from './video-branding.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, statSync, createReadStream, renameSync } from 'node:fs';
@@ -5,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { defaultProfile, brandInstructions } from './brand.mjs';
 import { mediaProvider, ProviderError } from './media-provider.mjs';
 
-export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider }) {
+export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl }) {
   provider ||= mediaProvider(env);
   db.exec(`CREATE TABLE IF NOT EXISTS profile(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,text TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -38,7 +39,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   }
   function finish(id, bytes, mime) {
     room(bytes.length);
-    const file=id+(mime==='video/mp4'?'.mp4':mime==='image/jpeg'?'.jpg':'.png');
+    const file=id+(mime==='video/mp4'?'.mp4':mime==='audio/pcm'?'.pcm':mime==='image/jpeg'?'.jpg':'.png');
     writeFileSync(join(mediaDir,file+'.tmp'),bytes);
     renameSync(join(mediaDir,file+'.tmp'),join(mediaDir,file));
     db.prepare("UPDATE media SET status='completed',file=?,mime=?,bytes=?,error=NULL,updated_at=? WHERE id=?").run(file,mime,bytes.length,now(),id);
@@ -54,10 +55,10 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
         const original=await provider.downloadVideo(uri);
         // Preserve the provider result even if local branding is unavailable.
         let branded;
-        try {if(env.VIDEO_BRANDING!=='off') branded=await brandVideo(original,profile(),row.ratio,row.duration);}catch{}
+        try {if(row.kind!=='scene'&&env.VIDEO_BRANDING!=='off') branded=await brandVideo(original,profile(),row.ratio,row.duration);}catch{}
         finish(row.id,branded||original,'video/mp4');
         if(branded) db.prepare('UPDATE media SET duration=? WHERE id=?').run(row.duration+4,row.id);
-        else if(env.VIDEO_BRANDING!=='off') db.prepare('UPDATE media SET error=? WHERE id=?').run('Original video saved. Automatic closing card could not be added; check server video dependencies.',row.id);
+        else if(row.kind!=='scene'&&env.VIDEO_BRANDING!=='off') db.prepare('UPDATE media SET error=? WHERE id=?').run('Original video saved. Automatic closing card could not be added; check server video dependencies.',row.id);
       }
       else db.prepare('UPDATE media SET error=NULL,updated_at=? WHERE id=?').run(now(),row.id);
     } catch(err) {
@@ -66,12 +67,14 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       else db.prepare('UPDATE media SET error=?,updated_at=? WHERE id=?').run(message(err),now(),row.id);
     } finally { running.delete(row.id); }
   }
+  const ads=createAdvertisements({db,env,profile,provider,generateImpl,body,json,fail,requiredText,audit,quota,room,finish,getMedia,mediaDir,track,isStopped:()=>stopped,renderImpl:renderAdvertisementImpl});
   const timer=setInterval(() => {
     if(stopped) return;
     for(const row of db.prepare("SELECT * FROM media WHERE status='processing'").all()) {
       if(Date.now()-Date.parse(row.created_at)>24*3600000) db.prepare("UPDATE media SET status='failed',error='Video did not finish within 24 hours. Check your provider before starting another request.' WHERE id=?").run(row.id);
       else track(poll(row));
     }
+    track(ads.tick());
   },15000);
   timer.unref();
   function metadata(data) {
@@ -91,9 +94,10 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   }
   return {
     profile, metadata,
-    state: () => ({ profile: profile(), media: media(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-2' }),
+    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads' }),
     close: async () => { stopped=true; clearInterval(timer); await Promise.allSettled([...tasks]); },
     async route(req,res,path,role) {
+      if(await ads.route(req,res,path,role))return true;
       const owner=()=>{if(role!=='owner') throw fail(403,'Only the owner can change this setting.');};
       if(path==='/api/weekly-plan' && req.method==='POST') {
         owner(); const data=await body(req);
@@ -152,7 +156,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       if(path==='/api/chat'&&req.method==='DELETE') {owner();db.prepare('DELETE FROM chat').run();audit('chat_cleared');json(res,200,{ok:true});return true;}
       if(path==='/api/export'&&req.method==='GET') {
         owner();res.setHeader('Content-Disposition','attachment; filename="rvh-workspace.json"');
-        json(res,200,{exportedAt:now(),profile:profile(),drafts:db.prepare('SELECT * FROM drafts').all(),metrics:db.prepare('SELECT * FROM metrics').all(),media:media(),chat:db.prepare('SELECT * FROM chat').all(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 1000').all()});return true;
+        json(res,200,{exportedAt:now(),profile:profile(),drafts:db.prepare('SELECT * FROM drafts').all(),metrics:db.prepare('SELECT * FROM metrics').all(),media:media(),advertisements:ads.list(),chat:db.prepare('SELECT * FROM chat').all(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 1000').all()});return true;
       }
       if(path==='/api/media' && req.method==='POST') {
         const data=await body(req,9*1024*1024);
@@ -205,7 +209,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
           json(res,200,publicMedia(getMedia(row.id)));return true;
         }
         if(req.method==='DELETE'&&!match[2]) {
-          owner();if(['starting','processing'].includes(row.status)||running.has(row.id)) throw fail(409,'Wait for this job to finish before deleting it.');
+          owner();if(ads.used(row.id))throw fail(409,'This media belongs to an advertisement. Remove the project first.');if(['starting','processing'].includes(row.status)||running.has(row.id)) throw fail(409,'Wait for this job to finish before deleting it.');
           if(row.file) {try{unlinkSync(join(mediaDir,row.file));}catch(err){if(err.code!=='ENOENT')throw err;}}
           db.prepare('DELETE FROM media WHERE id=?').run(row.id);audit('media_deleted',row.id);json(res,200,{ok:true});return true;
         }

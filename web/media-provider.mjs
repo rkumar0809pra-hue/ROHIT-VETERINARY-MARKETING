@@ -10,6 +10,18 @@ async function checkedJson(response, provider) {
 export function mediaProvider(env, fetchImpl = fetch) {
   const googleHeaders = { 'x-goog-api-key': env.GEMINI_API_KEY || '', 'Content-Type': 'application/json' };
   return {
+    async speech({text, language, voice='coral'}) {
+      const response = await fetchImpl('https://api.openai.com/v1/audio/speech', {
+        method:'POST', headers:{Authorization:`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({model:env.OPENAI_TTS_MODEL||'gpt-4o-mini-tts',voice,input:text,response_format:'pcm',instructions:`Read only the supplied text in ${language}. Warm, clear Indian veterinary advertisement narration. Concise natural delivery. Do not add words.`}),
+        signal:AbortSignal.timeout(90000),
+      });
+      if(!response.ok) {await response.body?.cancel();throw new ProviderError(`Narration returned HTTP ${response.status}. Check OpenAI billing and speech model access.`);}
+      const chunks=[];let size=0;
+      for await(const chunk of response.body){size+=chunk.length;if(size>4*1024*1024)throw new ProviderError('Narration is too long. Shorten the scene script.');chunks.push(chunk);}
+      if(size<4800||size%2)throw new ProviderError('Narration returned invalid audio.');
+      return Buffer.concat(chunks);
+    },
     async startVideo({ prompt, ratio, duration, image }) {
       const model = env.VEO_MODEL || 'veo-3.1-fast-generate-preview';
       if (!/^veo-[a-zA-Z0-9.-]+$/.test(model)) throw new ProviderError('Invalid Veo model configuration.');

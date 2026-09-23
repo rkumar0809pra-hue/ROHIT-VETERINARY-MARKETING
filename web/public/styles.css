@@ -1,8 +1,10 @@
+@font-face{font-family:RVHDevanagari;src:url("/devanagari.ttf") format("truetype");font-weight:100 900;font-display:swap;unicode-range:U+0900-097F,U+A8E0-A8FF}
 :root {
   font-family:
     Inter,
     system-ui,
     -apple-system,
+    RVHDevanagari,
     sans-serif;
   color: #173b35;
   background: #f5f6f2;
@@ -542,3 +544,7 @@ fieldset{border:0;padding:0;margin:0;min-width:0}fieldset:disabled{opacity:.65}i
 @media(max-width:760px){.template-grid,.media-grid,.library-filters{grid-template-columns:1fr}.calendar-grid{gap:2px}.calendar-cell{padding:4px;min-height:65px;font-size:12px}.calendar-cell small{font-size:9px}.social-preview{padding:16px}}
 
 .social-header{display:flex;gap:12px;align-items:center;margin-bottom:20px;white-space:normal}.social-header img{width:44px;height:44px}.social-header small{display:block;margin-top:5px}.calendar-grid strong{text-align:center;font-size:13px}.card{min-width:0}.actions.quick-actions{margin-bottom:24px}.stats{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))}
+/* Complete advertisement previews fit both desktop and mobile cards. */
+.asset-preview{display:block;width:100%;max-width:100%;max-height:520px;object-fit:contain;background:#123c36;border-radius:12px}
+#ad-edit .card{margin:18px 0;border:1px solid #dae3d5}
+#ad-start{margin:24px 0;padding:20px;background:#f4f5ef;border-radius:12px}

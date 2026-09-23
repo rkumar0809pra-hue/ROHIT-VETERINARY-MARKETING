@@ -38,7 +38,7 @@ async function body(req, limit = 160000) {
     throw fail(400, "Invalid JSON.");
   }
 }
-export function createApp({ env = process.env, generateImpl = generate, provider } = {}) {
+export function createApp({ env = process.env, generateImpl = generate, provider, renderAdvertisementImpl } = {}) {
   if (
     !env.ADMIN_PASSWORD ||
     env.ADMIN_PASSWORD.length < 16 ||
@@ -90,8 +90,10 @@ export function createApp({ env = process.env, generateImpl = generate, provider
     });
     res.end(JSON.stringify(data));
   };
-  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider});
+  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl});
   const files = {
+    "/devanagari.ttf": ["../assets/NotoSansDevanagari.ttf", "font/ttf"],
+    "/advertisement-ui.js": ["advertisement-ui.js", "text/javascript"],
     "/studio-ui.js": ["studio-ui.js", "text/javascript"],
     "/": ["index.html", "text/html"],
     "/app.js": ["app.js", "text/javascript"],
