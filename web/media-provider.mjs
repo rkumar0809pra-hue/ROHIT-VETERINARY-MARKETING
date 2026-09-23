@@ -1,3 +1,4 @@
+import {voices,styleInstructions} from './public/video-options.js';
 const base = 'https://generativelanguage.googleapis.com/v1beta';
 export class ProviderError extends Error { constructor(message, terminal=false){super(message);this.terminal=terminal;} }
 async function checkedJson(response, provider) {
@@ -10,10 +11,11 @@ async function checkedJson(response, provider) {
 export function mediaProvider(env, fetchImpl = fetch) {
   const googleHeaders = { 'x-goog-api-key': env.GEMINI_API_KEY || '', 'Content-Type': 'application/json' };
   return {
-    async speech({text, language, voice='coral'}) {
+    async speech({text, language, voice='coral',style='warm'}) {
+      if(!Object.hasOwn(voices,voice)||!Object.hasOwn(styleInstructions,style))throw new ProviderError('Choose a supported voice and delivery style.');
       const response = await fetchImpl('https://api.openai.com/v1/audio/speech', {
         method:'POST', headers:{Authorization:`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({model:env.OPENAI_TTS_MODEL||'gpt-4o-mini-tts',voice,input:text,response_format:'pcm',instructions:`Read only the supplied text in ${language}. Warm, clear Indian veterinary advertisement narration. Concise natural delivery. Do not add words.`}),
+        body:JSON.stringify({model:env.OPENAI_TTS_MODEL||'gpt-4o-mini-tts',voice,input:text,response_format:'pcm',instructions:`Read only the supplied text in ${language}. ${styleInstructions[style]} Clear Indian veterinary advertisement narration. Use the selected built-in voice; do not impersonate a real person. Concise natural delivery. Do not add words.`}),
         signal:AbortSignal.timeout(90000),
       });
       if(!response.ok) {await response.body?.cancel();throw new ProviderError(`Narration returned HTTP ${response.status}. Check OpenAI billing and speech model access.`);}

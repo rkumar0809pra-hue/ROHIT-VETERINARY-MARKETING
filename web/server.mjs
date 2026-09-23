@@ -92,6 +92,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
   };
   const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl});
   const files = {
+    "/video-options.js": ["video-options.js", "text/javascript"],
     "/devanagari.ttf": ["../assets/NotoSansDevanagari.ttf", "font/ttf"],
     "/advertisement-ui.js": ["advertisement-ui.js", "text/javascript"],
     "/studio-ui.js": ["studio-ui.js", "text/javascript"],

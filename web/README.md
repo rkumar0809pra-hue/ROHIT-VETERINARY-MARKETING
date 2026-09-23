@@ -118,3 +118,8 @@ Output is 720p MP4, with a snapshot of the saved clinic identity. Render needs t
 The displayed video-only USD estimate uses the configured supported Veo model and published 720p rates checked 2026-09-23. It excludes OpenAI script/speech charges, taxes, and previous attempts; it is not a billing cap. Unknown models show requested seconds without an invented monetary estimate.
 
 API references: https://ai.google.dev/gemini-api/docs/pricing and https://developers.openai.com/api/docs/guides/text-to-speech . Tests use fake provider responses; no paid generation is performed by the test suite.
+
+### Presenter and prompt controls
+Complete advertisements supports female, male, no presenter, or custom presenter directions. Choose Coral, Nova, Shimmer, Onyx, Echo, or Sage narration separately, with warm, professional, cinematic, energetic, or storyteller delivery. These are built-in AI voices, not celebrity impersonations. Appearance consistency and lip synchronisation remain best-effort.
+
+“Improve idea with AI” expands the topic into an editable video brief using one OpenAI request. It does not generate media. Review the brief, prepare a storyboard, save reviewed scenes, then authorise video generation. Existing projects retain their previous voice and use warm delivery by default.

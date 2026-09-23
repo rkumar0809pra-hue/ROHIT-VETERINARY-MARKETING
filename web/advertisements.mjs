@@ -1,3 +1,4 @@
+import {presenters,voices,voiceStyles,presenterDirection} from './public/video-options.js';
 import {randomUUID} from 'node:crypto';
 import {readFileSync,unlinkSync} from 'node:fs';
 import {join} from 'node:path';
@@ -10,10 +11,15 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
  // Never silently repeat that request. Known Veo operations remain pollable in media.
  db.prepare("UPDATE advertisements SET status='paused',error='Server restarted. Review saved scenes and provider usage before continuing.' WHERE status IN ('generating','assembling')").run();
  const now=()=>new Date().toISOString();let busy=false,planning=false;
- const unpack=row=>({...row,...JSON.parse(row.data),data:undefined});
+ const unpack=row=>({presenterType:'custom',voiceStyle:'warm',...row,...JSON.parse(row.data),data:undefined});
  const get=id=>{const row=db.prepare('SELECT * FROM advertisements WHERE id=?').get(id);if(!row)throw fail(404,'Advertisement not found.');return unpack(row);};
  function save(ad){const {id,title,status,version,error,created_at,updated_at,...data}=ad;db.prepare('UPDATE advertisements SET title=?,status=?,data=?,error=?,version=version+1,updated_at=? WHERE id=?').run(title,status,JSON.stringify(data),error||null,now(),id);}
  const image=id=>{const m=getMedia(id);if(m.status!=='completed'||!['image/png','image/jpeg'].includes(m.mime)||m.bytes>6*1024*1024)throw fail(400,'Choose a saved PNG or JPEG up to 6 MB.');return m;};
+ function choices(data){
+  const out={presenterType:data.presenterType??'custom',voice:data.voice??'coral',voiceStyle:data.voiceStyle??'warm'};
+  if(!Object.hasOwn(presenters,out.presenterType)||!Object.hasOwn(voices,out.voice)||!Object.hasOwn(voiceStyles,out.voiceStyle))throw fail(400,'Choose a supported presenter, voice and delivery style.');
+  return out;
+ }
  function validate(data){
   if(![30,60].includes(data.duration)||!['9:16','16:9'].includes(data.ratio)||!['Hindi','English','Hinglish'].includes(data.language))throw fail(400,'Choose 30 or 60 seconds, a supported format and language.');
   const durations=data.duration===30?[8,6,6,6]:[8,8,8,8,8,8,8];
@@ -43,7 +49,7 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
     s.mediaId=insertMedia('scene',`${ad.title} · Scene ${index+1}`,s.prompt,ad.ratio,s.duration);save(ad);
     try{
      const src=s.imageId?image(s.imageId):null;
-     const operation=await provider.startVideo({prompt:`${brandInstructions(ad.brand)}\n${ad.presenter}\n${s.prompt}\nSilent visual scene for a narrated veterinary advertisement. No dialogue, lettering or invented logos. No guaranteed cures. Keep the same presenter appearance where possible.`,ratio:ad.ratio,duration:s.duration,image:src?{bytes:readFileSync(join(mediaDir,src.file)),mime:src.mime}:null});
+     const operation=await provider.startVideo({prompt:`${brandInstructions(ad.brand)}\n${presenterDirection(ad.presenterType,ad.presenter)}\n${s.prompt}\nSilent visual scene for a narrated veterinary advertisement. No dialogue, lettering or invented logos. No guaranteed cures. Keep the same presenter appearance where possible.`,ratio:ad.ratio,duration:s.duration,image:src?{bytes:readFileSync(join(mediaDir,src.file)),mime:src.mime}:null});
      db.prepare("UPDATE media SET status='processing',operation=?,updated_at=? WHERE id=?").run(operation,now(),s.mediaId);
     }catch(err){db.prepare("UPDATE media SET status='failed',error=?,updated_at=? WHERE id=?").run(err.status||err.name==='ProviderError'?err.message:'Scene request failed. Check provider usage before retrying.',now(),s.mediaId);throw fail(502,`Scene ${index+1} request failed. Check provider usage before continuing.`);}
     return; // Poll the saved operation; never resubmit it automatically.
@@ -55,7 +61,7 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
      if(isStopped()||get(ad.id).status==='paused')return;
      if(s.audioId){if(getMedia(s.audioId).status==='completed')continue;throw fail(409,`Scene ${index+1} narration was interrupted. Check OpenAI usage before continuing.`);}
      quota('narration',30);s.audioId=insertMedia('audio',`${ad.title} · Voice ${index+1}`,s.narration,ad.ratio,s.duration);save(ad);
-     try{finish(s.audioId,await provider.speech({text:s.narration,language:ad.language,voice:ad.voice}),'audio/pcm');}
+     try{finish(s.audioId,await provider.speech({text:s.narration,language:ad.language,voice:ad.voice,style:ad.voiceStyle}),'audio/pcm');}
      catch(err){db.prepare("UPDATE media SET status='failed',error=? WHERE id=?").run('Narration request failed.',s.audioId);throw fail(502,`Scene ${index+1} narration failed. Check OpenAI billing and model access, then continue.`);}
     }
    }
@@ -73,8 +79,20 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
   async route(req,res,path,role){
    if(!path.startsWith('/api/advertisements'))return false;
    if(role!=='owner')throw fail(403,'Only the owner can manage advertisement projects.');
+   if(path==='/api/advertisements/prompt'&&req.method==='POST'){
+    const data=await body(req),topic=requiredText(data.topic,2000),selection=choices(data);
+    if(!['Hindi','English','Hinglish'].includes(data.language)||![30,60].includes(data.duration))throw fail(400,'Choose a supported language and duration.');
+    const notes=typeof data.presenter==='string'?data.presenter.trim():'';if(notes.length>600)throw fail(400,'Presenter notes are too long.');
+    if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure OpenAI for the prompt creator.');
+    if(planning)throw fail(409,'AI is already preparing a video brief.');quota('video prompts',20);planning=true;
+    try{
+     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Video prompt creator',instruction:'Return ONLY JSON with title (up to 160 characters) and topic (up to 2000 characters). Expand the idea into an actionable video brief: hook, scene sequence, camera movement, lighting, presenter continuity and closing call to action. Respect the selected presenter and narration style. Use only confirmed clinic facts. Do not invent offers or celebrity endorsements. Use an original fictional presenter. Do not create media or claim it was created.'},brief:JSON.stringify({topic,duration:data.duration,language:data.language,presenter:presenterDirection(selection.presenterType,notes),voiceStyle:voiceStyles[selection.voiceStyle]})});
+     let result;try{result=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{throw fail(502,'The prompt creator returned an invalid brief. Please try again.');}
+     json(res,200,{title:requiredText(result.title,160),topic:requiredText(result.topic,2000)});audit('video_prompt_created');
+    }finally{planning=false;}return true;
+   }
    if(path==='/api/advertisements'&&req.method==='POST'){
-    const data=await body(req),title=requiredText(data.title,160),topic=requiredText(data.topic,2000);
+    const data=await body(req),title=requiredText(data.title,160),topic=requiredText(data.topic,2000),selection=choices(data);
     if(![30,60].includes(data.duration)||!['9:16','16:9'].includes(data.ratio)||!['Hindi','English','Hinglish'].includes(data.language))throw fail(400,'Choose a supported duration, format and language.');
     const presenter=typeof data.presenter==='string'?data.presenter.trim():'';if(presenter.length>600)throw fail(400,'Presenter description is too long.');
     if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure OpenAI to prepare a storyboard.');
@@ -83,12 +101,12 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
     quota('advertisement plans',6);planning=true;
     try{
      const durations=data.duration===30?[8,6,6,6]:[8,8,8,8,8,8,8];
-     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Advertisement director',instruction:`Return ONLY JSON with a scenes array of exactly ${durations.length} items. Each item has prompt (visual scene direction in English, no spoken dialogue), narration (ready to speak in ${data.language}, maximum 12 words per scene). Durations in order: ${durations.join(',')} seconds. Build an engaging opening, useful service information, then a call to action. The app adds a four-second contact card. Do not invent prices, clinic appearance, offers or treatment outcomes. Keep presenter clothing and appearance consistent. Do not include contact address in every scene.`},brief:JSON.stringify({topic,presenter})});
+     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Advertisement director',instruction:`Return ONLY JSON with a scenes array of exactly ${durations.length} items. Each item has prompt (visual scene direction in English, no spoken dialogue), narration (ready to speak in ${data.language}, maximum 12 words per scene). Durations in order: ${durations.join(',')} seconds. Build an engaging opening, useful service information, then a call to action. The app adds a four-second contact card. Do not invent prices, clinic appearance, offers or treatment outcomes. Keep presenter clothing and appearance consistent. Do not include contact address in every scene.`},brief:JSON.stringify({topic,presenter:presenterDirection(selection.presenterType,presenter),voiceStyle:voiceStyles[selection.voiceStyle]})});
      let parsed;try{parsed=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{throw fail(502,'Storyboard was not valid. No project was saved.');}
      if(!Array.isArray(parsed.scenes))throw fail(502,'No scenes returned.');
      const scenes=validate({...data,scenes:parsed.scenes.map(s=>({...s,mode:'veo',imageId:''}))});
      const id=randomUUID(),brand=profile();
-     db.prepare('INSERT INTO advertisements(id,title,status,data,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(id,title,'draft',JSON.stringify({topic,presenter,duration:data.duration,ratio:data.ratio,language:data.language,scenes,narration:true,voice:'coral',brand,resultId:null}),now(),now());
+     db.prepare('INSERT INTO advertisements(id,title,status,data,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(id,title,'draft',JSON.stringify({topic,presenter,...selection,duration:data.duration,ratio:data.ratio,language:data.language,scenes,narration:true,brand,resultId:null}),now(),now());
      audit('advertisement_planned',id);json(res,201,get(id));
     }finally{planning=false;}return true;
    }
@@ -107,7 +125,7 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
     if(ad.status!=='draft')throw fail(409,'Started projects are locked so paid scenes keep their reviewed script.');
     ad.title=requiredText(data.title,160);ad.scenes=validate({...ad,scenes:data.scenes});
     ad.presenter=typeof data.presenter==='string'?data.presenter.trim():'';if(ad.presenter.length>600)throw fail(400,'Presenter description is too long.');
-    ad.narration=data.narration===true;if(!['coral','onyx'].includes(data.voice))throw fail(400,'Choose a supported voice.');ad.voice=data.voice;ad.brand=profile();save(ad);json(res,200,get(ad.id));return true;
+    ad.narration=data.narration===true;Object.assign(ad,choices({...ad,...data}));ad.brand=profile();save(ad);json(res,200,get(ad.id));return true;
    }
    if(req.method==='POST'&&match[2]==='pause'){
     if(!['generating','assembling'].includes(ad.status))throw fail(409,'Project is not running.');

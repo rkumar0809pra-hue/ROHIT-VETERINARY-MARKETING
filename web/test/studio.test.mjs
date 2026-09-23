@@ -79,9 +79,9 @@ test('advertisement workflow guards spend, preserves clips, pauses failures, and
  const mp4=Buffer.from('00000018667479706d70343200000000','hex');
  const f=await fixture(t,{env:{OPENAI_API_KEY:'mock',OPENAI_MODEL:'mock',GEMINI_API_KEY:'mock'},
   generateImpl:async()=>JSON.stringify({scenes:Array.from({length:4},()=>({prompt:'A calm dog at the clinic',narration:'अपने पशु की देखभाल करें।'}))}),
-  provider:{startVideo:async()=>`operations/scene-${++starts}`,pollVideo:async()=> 'https://generativelanguage.googleapis.com/video',downloadVideo:async()=>mp4,speech:async()=>{speech++;if(failSpeech){failSpeech=false;throw Error('quota');}return Buffer.alloc(48000);}},
+  provider:{startVideo:async a=>{assert.match(a.prompt,/male presenter/);return `operations/scene-${++starts}`;},pollVideo:async()=> 'https://generativelanguage.googleapis.com/video',downloadVideo:async()=>mp4,speech:async a=>{assert.equal(a.voice,'echo');assert.equal(a.style,'cinematic');speech++;if(failSpeech){failSpeech=false;throw Error('quota');}return Buffer.alloc(48000);}},
   renderAdvertisementImpl:async args=>{renders++;assert.equal(args.scenes.length,4);assert.equal(args.profile.phone,'9709095993');return mp4;}});
- await f.login('creator');const request={title:'Clinic ad',topic:'Clinic care',duration:30,ratio:'9:16',language:'Hindi'};
+ await f.login('creator');const request={title:'Clinic ad',topic:'Clinic care',duration:30,ratio:'9:16',language:'Hindi',presenterType:'male',voice:'echo',voiceStyle:'cinematic'};
  assert.equal((await f.call('advertisements','POST',request)).status,403);
  await f.login();let ad=(await f.call('advertisements','POST',request)).data;assert.equal(ad.status,'draft');assert.equal(starts,0);
  const state=async()=>{await new Promise(r=>setTimeout(r,5));return (await f.call('state')).data;};
@@ -108,7 +108,7 @@ test('advertisement workflow guards spend, preserves clips, pauses failures, and
 
 test('speech provider uses bounded PCM, server credentials, and approved voice input',async()=>{
  let body;const p=mediaProvider({OPENAI_API_KEY:'test'},async(url,opts)=>{assert.equal(url,'https://api.openai.com/v1/audio/speech');assert.equal(opts.headers.Authorization,'Bearer test');body=JSON.parse(opts.body);return new Response(Buffer.alloc(48000));});
- assert.equal((await p.speech({text:'नमस्ते',language:'Hindi',voice:'coral'})).length,48000);assert.equal(body.response_format,'pcm');assert.equal(body.input,'नमस्ते');
+ assert.equal((await p.speech({text:'नमस्ते',language:'Hindi',voice:'coral',style:'energetic'})).length,48000);assert.equal(body.response_format,'pcm');assert.equal(body.input,'नमस्ते');assert.match(body.instructions,/energetic advertising/);await assert.rejects(p.speech({text:'Test',voice:'celebrity'}),/supported voice/);
 });
 
 test('advertisement restart pauses paid work and retains a known operation',async()=>{
@@ -120,3 +120,12 @@ test('advertisement restart pauses paid work and retains a known operation',asyn
  const restarted=createAdvertisements(args);assert.equal(restarted.list()[0].status,'paused');await restarted.tick();assert.equal(starts,0);
  db.prepare("UPDATE advertisements SET status='generating'").run();await restarted.tick();assert.equal(starts,0);assert.equal(restarted.list()[0].scenes[0].mediaId,'known');db.close();
 });
+
+ test('AI video prompt creator preserves selection and only creates an editable brief',async t=>{
+ let received,calls=0;const f=await fixture(t,{env:{OPENAI_API_KEY:'mock',OPENAI_MODEL:'mock'},generateImpl:async args=>{received=args;calls++;return JSON.stringify({title:'Clinic introduction',topic:'A warm clinic introduction with a closing call to action.'});}});
+ const input={topic:'Introduce our clinic',duration:30,language:'Hindi',presenterType:'female',voice:'nova',voiceStyle:'warm'};
+ await f.login('creator');assert.equal((await f.call('advertisements/prompt','POST',input)).status,403);
+ await f.login();assert.equal((await f.call('advertisements/prompt','POST',{...input,voice:'unknown'})).status,400);assert.equal(calls,0);
+ const result=await f.call('advertisements/prompt','POST',input);assert.equal(result.status,200);assert.equal(result.data.title,'Clinic introduction');assert.match(JSON.parse(received.brief).presenter,/female presenter/);assert.equal(received.profile.phone,'9709095993');
+ const state=(await f.call('state')).data;assert.equal(state.advertisements.length,0);assert.equal(state.media.length,0);
+ });

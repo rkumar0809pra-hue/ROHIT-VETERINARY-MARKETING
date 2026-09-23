@@ -1,9 +1,10 @@
-const CACHE = "rvh-shell-v4";
+const CACHE = "rvh-shell-v5";
 const SHELL = [
   "/",
   "/app.js",
   "/studio-ui.js",
   "/advertisement-ui.js",
+  "/video-options.js",
   "/devanagari.ttf",
   "/styles.css",
   "/manifest.webmanifest",
