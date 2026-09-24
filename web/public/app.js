@@ -20,18 +20,18 @@ const esc = (value) =>
       ],
   );
 const names = {
-  dashboard: "Overview",
-  manager: "Marketing manager",
-  approvals: "Approval inbox",
-  creator: "Content Creator",
-  video: "Video Maker",
-  images: "Poster & media",
-  whatsapp: "WhatsApp",
-  agents: "Agent workspace",
+  dashboard: "Start here",
+  manager: "Plan my week",
+  approvals: "Review & approve",
+  creator: "Write a post",
+  video: "Make a video",
+  images: "Photos & posters",
+  whatsapp: "WhatsApp text",
+  agents: "Specialist agents",
   chat: "AI Assistant",
-  library: "Content library",
-  calendar: "Publishing plan",
-  analytics: "Analytics",
+  library: "Saved work",
+  calendar: "Posting calendar",
+  analytics: "Results",
   settings: "Settings",
 };
 const icons = {
@@ -113,29 +113,25 @@ function list(items) {
     : '<div class="card empty"><strong>Your next campaign starts here</strong>Create a draft yourself or give an agent a brief.</div>';
 }
 function dashboard() {
-  return `<div class="heading"><div><div class="eyebrow">Rohit Veterinary House · Lohardaga</div><h1>Your marketing, together.</h1><p>A focused workspace to create, review and plan.</p></div><button class="primary" data-new>+ New draft</button></div><section class="hero"><div><div class="eyebrow">Your AI marketing team</div><h2>One goal. Your complete marketing studio.</h2><p>Start with an idea for your clinic, pet owners or farmers. Your agents turn it into clear content ready for your review.</p><button class="primary" data-page="agents">Meet your agents ↗</button></div><div class="hero-mark" aria-hidden="true">✧</div></section><div class="stats">${[
-    ["Drafts", "draft"],
-    ["Needs approval", "pending"],
-    ["Approved", "approved"],
-    ["Planned", "planned"],
-    ["Published", "published"],
-  ]
-    .map(
-      ([label, s]) =>
-        `<div class="stat"><span>${label}</span><strong>${state.drafts.filter((d) => d.status === s).length}</strong></div>`,
-    )
-    .join(
-      "",
-    )}</div><div class="section-title"><h2>Your agents</h2><span class="note">On demand · Human reviewed</span></div><div class="actions quick-actions"><button data-page="creator">Create a post</button><button data-page="images">Create a poster</button><button data-page="video">Generate a video</button><button data-page="whatsapp">WhatsApp campaign</button><button data-page="chat">Ask the assistant</button></div>${cards()}<div class="section-title"><h2>Recent drafts</h2><button data-page="library">View all →</button></div>${list(state.drafts.slice(0, 4))}`;
+ const tasks=[['creator','Write a post','पोस्ट बनाएं','Facebook or Instagram text'],['video','Make a video','वीडियो बनाएं','Guided scenes, clinic photos and narration'],['images','Photos & posters','फोटो और पोस्टर','Upload clinic photos or make a poster'],['whatsapp','WhatsApp text','संदेश बनाएं','Prepare a message to copy and share'],['manager','Plan my week','सप्ताह की योजना','Seven daily drafts for your review'],['chat','Ask for help','AI से पूछें','Ideas, captions and marketing questions']];
+ const pending=state.drafts.filter(d=>d.status==='pending').length;
+ return `<div class="heading"><div><h1>What would you like to do?</h1><p>Choose one task. Your AI helper is already selected.</p></div></div><div class="grid">${tasks.map(([key,title,hindi,help])=>`<button class="card task-card" data-page="${key}"><h2>${title}</h2><strong>${hindi}</strong><p>${help}</p><span>Start →</span></button>`).join('')}</div><section class="card next-step"><h2>Your next step</h2><p>${pending?`${pending} drafts are waiting for your review.`:'Create something above, then review it in Saved work.'}</p><button class="primary" data-page="${pending?'approvals':'library'}">${pending?'Review drafts':'Open saved work'}</button><p class="note">Posts and WhatsApp messages are shared manually after approval.</p></section><div class="section-title"><h2>Recent work</h2><button data-page="library">View all</button></div>${list(state.drafts.slice(0,4))}`;
 }
+function navigation(){
+ const link=key=>`<button data-page="${key}" class="${key===page?'active':''}" ${key===page?'aria-current="page"':''}><span>${icons[key]||'•'}</span>${names[key]}</button>`;
+ const primary=['dashboard','creator','video','images','whatsapp','approvals','library'];
+ const more=['manager','chat','calendar','analytics','agents','settings'];
+ return primary.map(link).join('')+`<details ${more.includes(page)?'open':''}><summary>More tools</summary>${more.map(link).join('')}</details>`;
+}
+const agentExamples={strategy:'Plan a week of awareness posts for pet owners in Lohardaga. Ask readers to call for appointment availability.',content:'Write a short Hindi Facebook post introducing our clinic and inviting owners to call.',video:'Write a 30-second Hindi script introducing our clinic, with a phone number at the end.',whatsapp:'Write a short Hindi consultation invitation for opted-in customers, including an opt-out line.',analytics:'Explain the saved campaign results. Identify missing information and suggest three improvements.',review:'Paste the draft to check here. Check the clinic name, phone, clarity and unsupported claims.'};
 function agentPage() {
   const a = state.agents.find((a) => a.id === selected);
-  return `<div class="heading"><div><div class="eyebrow">Create with purpose</div><h1>Agent workspace</h1><p>Choose a specialist and tell it what you need.</p></div></div><div class="split"><form id="agent-form" class="card"><label for="agent">Your agent</label><select id="agent" ${busy ? "disabled" : ""}>${state.agents.map((a) => `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select><p>${esc(a.description)}</p><label for="language">Output language</label><select id="language">${["Hindi", "English", "Hinglish"].map((l) => `<option ${l === language ? "selected" : ""}>${l}</option>`).join("")}</select><label for="brief">Campaign brief</label><textarea id="brief" maxlength="6000" required placeholder="Example: Create a vaccination awareness post for dog owners in Lohardaga. Invite them to book a consultation.">${esc(brief)}</textarea><p class="note">Include the audience, goal and confirmed offer details. Use aggregate information without customer names or phone numbers.</p><button class="primary" ${busy || !state.aiConfigured ? "disabled" : ""}>${busy ? "Agent is working…" : "Generate draft ↗"}</button></form><section class="card"><div class="section-title"><h2>Work log</h2><span class="pill">OpenAI</span></div>${busy ? '<div class="empty"><div class="spinner"></div><p>Preparing your draft. This can take a minute.</p></div>' : ""}${state.runs.length ? state.runs.map((r) => `<div class="run"><div><strong>${esc(agentName(r.agent))}</strong><small>${date(r.created_at)}</small>${r.error ? `<p>${esc(r.error)}</p>` : ""}${r.status === "completed" ? `<button data-draft="${r.id}">Open draft</button>` : ""}</div><div>${pill(r.status)}</div></div>`).join("") : '<div class="empty"><strong>A brief becomes a draft</strong>Completed work will be saved in your content library.</div>'}</section></div>`;
+  return `<div class="heading"><div><div class="eyebrow">Create with purpose</div><h1>Specialist agents</h1><p>For everyday work, use Start here. Here you can give a specialist a custom request.</p></div></div><div class="split"><form id="agent-form" class="card"><label for="agent">Your agent</label><select id="agent" ${busy ? "disabled" : ""}>${state.agents.map((a) => `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select><p>${esc(a.description)}</p><label for="language">Output language</label><select id="language">${["Hindi", "English", "Hinglish"].map((l) => `<option ${l === language ? "selected" : ""}>${l}</option>`).join("")}</select><button type="button" data-agent-example>Use an example</button><label for="brief">What do you want this helper to do?</label><textarea id="brief" maxlength="6000" required placeholder="Example: Create a vaccination awareness post for dog owners in Lohardaga. Invite them to book a consultation.">${esc(brief)}</textarea><p class="note">Include the audience, goal and confirmed offer details. Use aggregate information without customer names or phone numbers.</p><button class="primary" ${busy || !state.aiConfigured ? "disabled" : ""}>${busy ? "Agent is working…" : "Generate draft ↗"}</button></form><section class="card"><div class="section-title"><h2>Your previous results</h2><span class="pill">OpenAI</span></div>${busy ? '<div class="empty"><div class="spinner"></div><p>Preparing your draft. This can take a minute.</p></div>' : ""}${state.runs.length ? state.runs.map((r) => `<div class="run"><div><strong>${esc(agentName(r.agent))}</strong><small>${date(r.created_at)}</small>${r.error ? `<p>${esc(r.error)}</p>` : ""}${r.status === "completed" ? `<button data-draft="${r.id}">Open draft</button>` : ""}</div><div>${pill(r.status)}</div></div>`).join("") : '<div class="empty"><strong>A brief becomes a draft</strong>Completed work will be saved in your content library.</div>'}</section></div>`;
 }
 function editor() {
   const d = state.drafts.find((d) => d.id === draftId);
   if (!d) return "<p>Draft not found. Reload the library.</p>";
-  return `<div class="heading"><div><button data-page="library">← Content library</button><h1>Review your draft</h1></div>${pill(d.status)}</div><div class="split"><form id="edit-form" class="card"><label for="title">Title</label><input id="title" maxlength="160" value="${esc(d.title)}" required><label for="content">Content</label><textarea class="editor" id="content" maxlength="20000" required>${esc(d.content)}</textarea><p class="note">Saving an edit returns the item to Draft and clears any publishing plan. Submit it again for approval.</p><button class="primary">Save changes</button></form><section class="card"><div class="eyebrow">Review & handoff</div><h2>${esc(agentName(d.agent))}</h2><p>${esc(d.language)} · ${date(d.created_at)}</p><div class="actions">${d.status === "draft" ? '<button class="primary" data-action="submit">Submit for approval</button>' : ""}${d.status === "pending" && state.role === "owner" ? '<button class="primary" data-action="approve">Approve draft</button><button data-action="reject">Return to draft</button>' : ""}${["approved", "planned", "published"].includes(d.status) ? "<button data-copy>Copy approved content</button>" : ""}<button data-review>Send to quality reviewer</button></div>${["approved", "planned"].includes(d.status) && state.role !== "creator" ? `<form id="plan-form"><label for="planned">Plan publication (India Standard Time)</label><input id="planned" type="datetime-local" required><button class="primary">Save publishing plan</button></form>${d.planned_at ? `<p>Planned: ${date(d.planned_at)}</p><button data-action="unplan">Remove from plan</button>` : ""}` : ""}<p class="note">Publishing plans do not send posts automatically. Copy approved content to your chosen platform. Your edits must be saved before using review actions.</p><details><summary>Original brief</summary><p class="output">${esc(d.brief || "Written manually.")}</p></details></section></div>`;
+  return `<div class="heading"><div><button data-page="library">← Saved work</button><h1>Review your draft</h1></div>${pill(d.status)}</div><div class="split"><form id="edit-form" class="card"><label for="title">Title</label><input id="title" maxlength="160" value="${esc(d.title)}" required><label for="content">Content</label><textarea class="editor" id="content" maxlength="20000" required>${esc(d.content)}</textarea><p class="note">Saving an edit returns the item to Draft and clears any publishing plan. Submit it again for approval.</p><button class="primary">Save changes</button></form><section class="card"><div class="eyebrow">Review & handoff</div><h2>${esc(agentName(d.agent))}</h2><p>${esc(d.language)} · ${date(d.created_at)}</p><div class="actions">${d.status === "draft" ? '<button class="primary" data-action="submit">Submit for approval</button>' : ""}${d.status === "pending" && state.role === "owner" ? '<button class="primary" data-action="approve">Approve draft</button><button data-action="reject">Return to draft</button>' : ""}${["approved", "planned", "published"].includes(d.status) ? "<button data-copy>Copy approved content</button>" : ""}<button data-review>Send to quality reviewer</button></div>${["approved", "planned"].includes(d.status) && state.role !== "creator" ? `<form id="plan-form"><label for="planned">Plan publication (India Standard Time)</label><input id="planned" type="datetime-local" required><button class="primary">Save publishing plan</button></form>${d.planned_at ? `<p>Planned: ${date(d.planned_at)}</p><button data-action="unplan">Remove from plan</button>` : ""}` : ""}<p class="note">Posting calendars do not send posts automatically. Copy approved content to your chosen platform. Your edits must be saved before using review actions.</p><details><summary>Original brief</summary><p class="output">${esc(d.brief || "Written manually.")}</p></details></section></div>`;
 }
 function newDraft() {
   return '<div class="heading"><h1>Create a draft</h1></div><form id="new-form" class="card"><label for="title">Title</label><input id="title" maxlength="160" required><label for="content">Content</label><textarea id="content" class="editor" maxlength="20000" required></textarea><button class="primary">Save draft</button></form>';
@@ -197,16 +193,7 @@ function render() {
               : page === "settings"
                 ? settings() + `<div class="split studio-extra">${profileSection(context())}</div>`
                 : libraryPage(context()));
-  app.innerHTML = `<aside class="${menu ? "open" : ""}"><div class="brand"><img src="/icon.svg" alt=""><div><strong>RVH Studio</strong><small>MARKETING WORKSPACE</small></div></div><nav class="nav" aria-label="Main navigation">${Object.entries(
-    names,
-  )
-    .map(
-      ([key, label]) =>
-        `<button data-page="${key}" class="${key === page ? "active" : ""}" ${key === page ? 'aria-current="page"' : ""}><span>${icons[key]}</span>${label}</button>`,
-    )
-    .join(
-      "",
-    )}</nav><div class="side-bottom">Rohit Veterinary House<br>Lohardaga, Jharkhand<br><button data-logout>Sign out</button></div></aside><div class="shell"><header><button class="mobile-menu" data-menu aria-label="Toggle navigation" aria-expanded="${menu}">☰</button><span class="header-name">Marketing & content operations</span><span class="pill">Dr. Rohit · ${esc(state.role)}</span></header><main>${!navigator.onLine ? '<div class="banner offline">You are offline. Reconnect to load or save your work.</div>' : ""}${!state.aiConfigured ? '<div class="banner">AI agents need setup: add your OpenAI key and model to the server configuration. You can create and review manual drafts now.</div>' : ""}${content}</main></div>`;
+  app.innerHTML = `<aside class="${menu ? "open" : ""}"><div class="brand"><img src="/icon.svg" alt=""><div><strong>RVH Studio</strong><small>MARKETING WORKSPACE</small></div></div><nav class="nav" aria-label="Main navigation">${navigation()}</nav><div class="side-bottom">Rohit Veterinary House<br>Lohardaga, Jharkhand<br><button data-logout>Sign out</button></div></aside><div class="shell"><header><button class="mobile-menu" data-menu aria-label="Toggle navigation" aria-expanded="${menu}">☰</button><span class="header-name">${esc(names[page]||"Review your work")}</span><span class="pill">Dr. Rohit · ${esc(state.role)}</span></header><main>${!navigator.onLine ? '<div class="banner offline">You are offline. Reconnect to load or save your work.</div>' : ""}${!state.aiConfigured ? '<div class="banner">AI agents need setup: add your OpenAI key and model to the server configuration. You can create and review manual drafts now.</div>' : ""}${content}</main></div>`;
 }
 app.addEventListener("input", (e) => {
   if(state) studioInput(e,context());
@@ -247,6 +234,7 @@ app.addEventListener("click", async (e) => {
     return;
   try {
     if(state && await studioClick(el,context())) return;
+    if(el.hasAttribute("data-agent-example")){brief=agentExamples[selected]||"";render();}
     if (el.dataset.page) {
       page = el.dataset.page;
       menu = false;
@@ -379,7 +367,7 @@ app.addEventListener("submit", async (e) => {
           document.querySelector("#planned").value + ":00+05:30",
         ).toISOString(),
       });
-      notice("Publishing plan saved.");
+      notice("Posting calendar saved.");
     }
     if (form.id === "metrics-form") {
       await api(

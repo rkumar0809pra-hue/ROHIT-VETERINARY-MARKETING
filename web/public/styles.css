@@ -548,3 +548,11 @@ fieldset{border:0;padding:0;margin:0;min-width:0}fieldset:disabled{opacity:.65}i
 .asset-preview{display:block;width:100%;max-width:100%;max-height:520px;object-fit:contain;background:#123c36;border-radius:12px}
 #ad-edit .card{margin:18px 0;border:1px solid #dae3d5}
 #ad-start{margin:24px 0;padding:20px;background:#f4f5ef;border-radius:12px}
+
+/* Task-first navigation and progressive video form. */
+[hidden]{display:none!important}
+.task-card{text-align:left;width:100%;cursor:pointer;color:var(--ink,#123c36)}
+.task-card h2{margin:0 0 8px}.task-card strong{font-weight:500}.task-card span{font-weight:700}
+.nav details{width:100%}.nav summary{padding:14px 20px;cursor:pointer;color:inherit}.nav details button{width:100%}
+.next-step{margin-top:24px}.step-progress{padding:12px 16px;background:#e7efdf;border-radius:8px;font-weight:700}
+#ad-create{scroll-margin-top:24px}details>summary{cursor:pointer}#builder-form details{margin:12px 0}
