@@ -1,4 +1,4 @@
-const CACHE = "rvh-shell-v8";
+const CACHE = "rvh-shell-v9";
 const SHELL = [
   "/",
   "/app.js",
@@ -13,9 +13,13 @@ const SHELL = [
   "/icon-192.png",
   "/icon-512.png",
 ];
-self.addEventListener("install", (event) =>
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL))),
-);
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
+  // Activate this version immediately instead of waiting for every open tab
+  // to close first, so a deploy takes effect on the next reload, not the
+  // next time the browser happens to fully release the old worker.
+  self.skipWaiting();
+});
 self.addEventListener("activate", (event) =>
   event.waitUntil(
     caches
@@ -26,7 +30,8 @@ self.addEventListener("activate", (event) =>
             .filter((k) => k.startsWith("rvh-shell-") && k !== CACHE)
             .map((k) => caches.delete(k)),
         ),
-      ),
+      )
+      .then(() => self.clients.claim()),
   ),
 );
 self.addEventListener("fetch", (event) => {
