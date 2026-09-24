@@ -15,6 +15,7 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
  const get=id=>{const row=db.prepare('SELECT * FROM advertisements WHERE id=?').get(id);if(!row)throw fail(404,'Advertisement not found.');return unpack(row);};
  function save(ad){const {id,title,status,version,error,created_at,updated_at,...data}=ad;db.prepare('UPDATE advertisements SET title=?,status=?,data=?,error=?,version=version+1,updated_at=? WHERE id=?').run(title,status,JSON.stringify(data),error||null,now(),id);}
  const image=id=>{const m=getMedia(id);if(m.status!=='completed'||!['image/png','image/jpeg'].includes(m.mime)||m.bytes>6*1024*1024)throw fail(400,'Choose a saved PNG or JPEG up to 6 MB.');return m;};
+ function selectedPhotos(data){const ids=data.photoIds??[];if(!Array.isArray(ids)||ids.length>7||ids.some(id=>typeof id!=='string'))throw fail(400,'Choose up to seven clinic photos.');return [...new Set(ids)].map(id=>{const m=image(id);if(m.kind!=='upload')throw fail(400,'Choose uploaded clinic photos.');return {id,title:m.title,category:m.category||'Unlabelled',description:m.description||''};});}
  function choices(data){
   const out={presenterType:data.presenterType??'custom',voice:data.voice??'coral',voiceStyle:data.voiceStyle??'warm'};
   if(!Object.hasOwn(presenters,out.presenterType)||!Object.hasOwn(voices,out.voice)||!Object.hasOwn(voiceStyles,out.voiceStyle))throw fail(400,'Choose a supported presenter, voice and delivery style.');
@@ -80,19 +81,19 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
    if(!path.startsWith('/api/advertisements'))return false;
    if(role!=='owner')throw fail(403,'Only the owner can manage advertisement projects.');
    if(path==='/api/advertisements/prompt'&&req.method==='POST'){
-    const data=await body(req),topic=requiredText(data.topic,2000),selection=choices(data);
+    const data=await body(req),topic=requiredText(data.topic,2000),selection=choices(data),photos=selectedPhotos(data);
     if(!['Hindi','English','Hinglish'].includes(data.language)||![30,60].includes(data.duration))throw fail(400,'Choose a supported language and duration.');
     const notes=typeof data.presenter==='string'?data.presenter.trim():'';if(notes.length>600)throw fail(400,'Presenter notes are too long.');
     if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure OpenAI for the prompt creator.');
     if(planning)throw fail(409,'AI is already preparing a video brief.');quota('video prompts',20);planning=true;
     try{
-     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Video prompt creator',instruction:'Return ONLY JSON with title (up to 160 characters) and topic (up to 2000 characters). Expand the idea into an actionable video brief: hook, scene sequence, camera movement, lighting, presenter continuity and closing call to action. Respect the selected presenter and narration style. Use only confirmed clinic facts. Do not invent offers or celebrity endorsements. Use an original fictional presenter. Do not create media or claim it was created.'},brief:JSON.stringify({topic,duration:data.duration,language:data.language,presenter:presenterDirection(selection.presenterType,notes),voiceStyle:voiceStyles[selection.voiceStyle]})});
+     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Video prompt creator',instruction:'Return ONLY JSON with title (up to 160 characters) and topic (up to 2000 characters). Expand the idea into an actionable video brief: hook, scene sequence, camera movement, lighting, presenter continuity and closing call to action. Respect the selected presenter and narration style. Use only confirmed clinic facts. Do not invent offers or celebrity endorsements. Use an original fictional presenter. Do not create media or claim it was created.'},brief:JSON.stringify({topic,duration:data.duration,language:data.language,presenter:presenterDirection(selection.presenterType,notes),photos,voiceStyle:voiceStyles[selection.voiceStyle]})});
      let result;try{result=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{throw fail(502,'The prompt creator returned an invalid brief. Please try again.');}
      json(res,200,{title:requiredText(result.title,160),topic:requiredText(result.topic,2000)});audit('video_prompt_created');
     }finally{planning=false;}return true;
    }
    if(path==='/api/advertisements'&&req.method==='POST'){
-    const data=await body(req),title=requiredText(data.title,160),topic=requiredText(data.topic,2000),selection=choices(data);
+    const data=await body(req),title=requiredText(data.title,160),topic=requiredText(data.topic,2000),selection=choices(data),photos=selectedPhotos(data);
     if(![30,60].includes(data.duration)||!['9:16','16:9'].includes(data.ratio)||!['Hindi','English','Hinglish'].includes(data.language))throw fail(400,'Choose a supported duration, format and language.');
     const presenter=typeof data.presenter==='string'?data.presenter.trim():'';if(presenter.length>600)throw fail(400,'Presenter description is too long.');
     if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure OpenAI to prepare a storyboard.');
@@ -101,10 +102,10 @@ export function createAdvertisements({db,env,profile,provider,generateImpl,body,
     quota('advertisement plans',6);planning=true;
     try{
      const durations=data.duration===30?[8,6,6,6]:[8,8,8,8,8,8,8];
-     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Advertisement director',instruction:`Return ONLY JSON with a scenes array of exactly ${durations.length} items. Each item has prompt (visual scene direction in English, no spoken dialogue), narration (ready to speak in ${data.language}, maximum 12 words per scene). Durations in order: ${durations.join(',')} seconds. Build an engaging opening, useful service information, then a call to action. The app adds a four-second contact card. Do not invent prices, clinic appearance, offers or treatment outcomes. Keep presenter clothing and appearance consistent. Do not include contact address in every scene.`},brief:JSON.stringify({topic,presenter:presenterDirection(selection.presenterType,presenter),voiceStyle:voiceStyles[selection.voiceStyle]})});
+     const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:data.language,profile:profile(),agent:{id:'manager',name:'Advertisement director',instruction:`Return ONLY JSON with a scenes array of exactly ${durations.length} items. Each item has prompt (visual scene direction in English, no spoken dialogue), narration (ready to speak in ${data.language}, maximum 12 words per scene). Durations in order: ${durations.join(',')} seconds. Build an engaging opening, useful service information, then a call to action. The app adds a four-second contact card. Do not invent prices, clinic appearance, offers or treatment outcomes. Keep presenter clothing and appearance consistent. Do not include contact address in every scene. When supplied photos match a scene, return imageId using exactly a supplied photo ID; otherwise use an empty imageId. Use the photo descriptions as confirmed details, never invent what a photo contains. Photo scenes show the real photograph with voiceover; do not describe a presenter appearing inside an unchanged photo.`},brief:JSON.stringify({topic,presenter:presenterDirection(selection.presenterType,presenter),photos,voiceStyle:voiceStyles[selection.voiceStyle]})});
      let parsed;try{parsed=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{throw fail(502,'Storyboard was not valid. No project was saved.');}
      if(!Array.isArray(parsed.scenes))throw fail(502,'No scenes returned.');
-     const scenes=validate({...data,scenes:parsed.scenes.map(s=>({...s,mode:'veo',imageId:''}))});
+     const scenes=validate({...data,scenes:parsed.scenes.map(s=>{const photo=photos.find(p=>p.id===s.imageId);if(s.imageId&&!photo)throw fail(502,'Storyboard selected an unknown photo. No project saved.');return {...s,mode:photo?'still':'veo',imageId:photo?.id||''};})});
      const id=randomUUID(),brand=profile();
      db.prepare('INSERT INTO advertisements(id,title,status,data,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(id,title,'draft',JSON.stringify({topic,presenter,...selection,duration:data.duration,ratio:data.ratio,language:data.language,scenes,narration:true,brand,resultId:null}),now(),now());
      audit('advertisement_planned',id);json(res,201,get(id));

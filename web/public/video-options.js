@@ -7,3 +7,5 @@ export function presenterDirection(type='custom',notes=''){
  const base={female:'An original adult Indian female presenter.',male:'An original adult Indian male presenter.',none:'No human presenter. Focus on animals, products and clinic visuals.',custom:'An original adult presenter if requested in the appearance notes.'}[type]||'';
  return `${base} ${notes} Keep appearance and clothing consistent between scenes. Use an original fictional presenter; do not imply celebrity endorsement.`;
 }
+
+export const photoCategories=['Unlabelled','Entrance','Consultation','Laboratory','Pharmacy','Surgery','Team','Products','Other'];

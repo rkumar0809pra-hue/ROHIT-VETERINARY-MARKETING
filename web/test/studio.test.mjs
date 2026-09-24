@@ -129,3 +129,18 @@ test('advertisement restart pauses paid work and retains a known operation',asyn
  const result=await f.call('advertisements/prompt','POST',input);assert.equal(result.status,200);assert.equal(result.data.title,'Clinic introduction');assert.match(JSON.parse(received.brief).presenter,/female presenter/);assert.equal(received.profile.phone,'9709095993');
  const state=(await f.call('state')).data;assert.equal(state.advertisements.length,0);assert.equal(state.media.length,0);
  });
+
+test('clinic photo labels reach planning and only selected photos become unchanged scenes',async t=>{
+ let imageId,received,bad=false;
+ const f=await fixture(t,{env:{OPENAI_API_KEY:'mock',OPENAI_MODEL:'mock'},generateImpl:async a=>{received=JSON.parse(a.brief);return JSON.stringify({scenes:Array.from({length:4},(_,i)=>({prompt:'Show the clinic area',narration:'हमारी क्लिनिक में आपका स्वागत है।',imageId:i===0?(bad?'unknown':imageId):''}))});}});await f.login();
+ let upload=await f.call('media','POST',{kind:'upload',title:'Lab',category:'Laboratory',description:'Our microscope and CBC analyser',base64:png.toString('base64')});assert.equal(upload.status,202);imageId=upload.data.id;
+ assert.equal(upload.data.category,'Laboratory');
+ await f.login('creator');assert.equal((await f.call('media/'+imageId,'PATCH',{title:'Lab',category:'Laboratory'})).status,403);await f.login();
+ assert.equal((await f.call('media/'+imageId,'PATCH',{title:'RVH lab',category:'Laboratory',description:'Microscope'})).status,200);
+ assert.equal((await f.call('media/'+imageId,'PATCH',{title:'Lab',category:'Bogus'})).status,400);
+ const request={title:'Clinic ad',topic:'Show our lab',duration:30,ratio:'9:16',language:'Hindi',photoIds:[imageId]};
+ const result=await f.call('advertisements','POST',request);assert.equal(result.status,201);assert.equal(received.photos[0].description,'Microscope');assert.equal(result.data.scenes[0].imageId,imageId);assert.equal(result.data.scenes[0].mode,'still');assert.equal(result.data.scenes[1].mode,'veo');
+ assert.equal((await f.call('media/'+imageId,'DELETE')).status,409);
+ bad=true;assert.equal((await f.call('advertisements','POST',request)).status,502);
+ assert.equal((await f.call('state')).data.advertisements.length,1);
+});

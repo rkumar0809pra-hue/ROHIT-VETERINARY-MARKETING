@@ -123,3 +123,6 @@ API references: https://ai.google.dev/gemini-api/docs/pricing and https://develo
 Complete advertisements supports female, male, no presenter, or custom presenter directions. Choose Coral, Nova, Shimmer, Onyx, Echo, or Sage narration separately, with warm, professional, cinematic, energetic, or storyteller delivery. These are built-in AI voices, not celebrity impersonations. Appearance consistency and lip synchronisation remain best-effort.
 
 “Improve idea with AI” expands the topic into an editable video brief using one OpenAI request. It does not generate media. Review the brief, prepare a storyboard, save reviewed scenes, then authorise video generation. Existing projects retain their previous voice and use warm delivery by default.
+
+### Clinic photo library
+Uploaded photos can be labelled by clinic area with a factual description. Owners can edit labels on existing uploads; older uploads remain Unlabelled. Video Maker lets owners select up to seven uploaded photos before AI planning. The planner receives their titles, categories and descriptions, not image pixels. Only selected photo IDs may be assigned to scenes; these default to unchanged still photos with narration. Review assignments and captions before starting. Single-clip and standalone storyboard tools remain available under More tools.

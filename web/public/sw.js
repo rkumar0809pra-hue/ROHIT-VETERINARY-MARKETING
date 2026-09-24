@@ -1,4 +1,4 @@
-const CACHE = "rvh-shell-v5";
+const CACHE = "rvh-shell-v6";
 const SHELL = [
   "/",
   "/app.js",

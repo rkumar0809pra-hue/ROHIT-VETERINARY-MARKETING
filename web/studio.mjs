@@ -1,3 +1,4 @@
+import {photoCategories} from './public/video-options.js';
 import { createAdvertisements } from './advertisements.mjs';
 import { brandVideo } from './video-branding.mjs';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +13,9 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
     CREATE TABLE IF NOT EXISTS chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,text TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,prompt TEXT NOT NULL,ratio TEXT NOT NULL,duration INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL,operation TEXT,file TEXT,mime TEXT,bytes INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS quota(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,created_at TEXT NOT NULL);`);
+  const mediaColumns=db.prepare('PRAGMA table_info(media)').all().map(c=>c.name);
+  for(const name of ['category','description'])if(!mediaColumns.includes(name))db.exec(`ALTER TABLE media ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
+  function photoDetails(data){const category=data.category||'Unlabelled',description=data.description||'';if(!photoCategories.includes(category)||typeof description!=='string'||description.length>600)throw fail(400,'Choose a photo category and a description up to 600 characters.');return {category,description:description.trim()};}
   const columns = db.prepare('PRAGMA table_info(drafts)').all().map(c => c.name);
   for (const [name, spec] of Object.entries({meta_json:"TEXT NOT NULL DEFAULT '{}'", published_at:'TEXT', published_url:'TEXT', metrics_json:"TEXT NOT NULL DEFAULT '{}'"})) {
     if (!columns.includes(name)) db.exec(`ALTER TABLE drafts ADD COLUMN ${name} ${spec}`);
@@ -25,7 +29,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   const running = new Set(), tasks = new Set();
   const track = (promise) => { tasks.add(promise); promise.finally(() => tasks.delete(promise)).catch(() => {}); return promise; };
   const profile = () => ({ ...defaultProfile, ...JSON.parse(db.prepare('SELECT data FROM profile WHERE id=1').get()?.data || '{}') });
-  const media = () => db.prepare('SELECT id,kind,title,prompt,ratio,duration,status,mime,bytes,error,created_at,updated_at FROM media ORDER BY created_at DESC LIMIT 200').all();
+  const media = () => db.prepare('SELECT id,kind,title,prompt,ratio,duration,status,mime,bytes,error,created_at,updated_at,category,description FROM media ORDER BY created_at DESC LIMIT 200').all();
   const getMedia = id => { const row=db.prepare('SELECT * FROM media WHERE id=?').get(id); if(!row) throw fail(404,'Media not found.'); return row; };
   const publicMedia = row => { const {file, operation,...rest}=row; return rest; };
   function quota(kind, max) {
@@ -166,6 +170,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
         if(kind==='image'&&!env.OPENAI_API_KEY) throw fail(503,'Add OPENAI_API_KEY to enable image creation.');
         if(kind!=='upload'&&data.confirmCost!==true) throw fail(400,'Confirm provider usage charges before generation.');
         const id=randomUUID(),title=requiredText(data.title,160),prompt=kind==='upload'?'':requiredText(data.prompt,6000);
+        const labels=kind==='upload'?photoDetails(data):null;
         const ratio=['9:16','16:9','1:1'].includes(data.ratio)?data.ratio:'9:16';
         if(kind==='video'&&(ratio==='1:1'||![4,6,8].includes(data.duration))) throw fail(400,'Veo supports 9:16 or 16:9 and 4, 6 or 8 seconds here.');
         let image=null,bytes=null,mime=null;
@@ -185,7 +190,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
         quota(kind==='upload'?'uploads':'media',kind==='upload'?100:12);
         db.prepare('INSERT INTO media(id,kind,title,prompt,ratio,duration,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(id,kind,title,prompt,ratio,kind==='video'?data.duration:0,'starting',now(),now());
         audit('media_requested',id);
-        if(kind==='upload') finish(id,bytes,mime);
+        if(kind==='upload') {db.prepare('UPDATE media SET category=?,description=? WHERE id=?').run(labels.category,labels.description,id);finish(id,bytes,mime);}
         else {
           const brand=brandInstructions(profile());
           const work=async()=>{
@@ -204,6 +209,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       const match=/^\/api\/media\/([a-f0-9-]+)(?:\/(file|check))?$/.exec(path);
       if(match) {
         const row=getMedia(match[1]);
+        if(req.method==='PATCH'&&!match[2]){owner();if(row.kind!=='upload')throw fail(400,'Only uploaded clinic photos can be labelled.');const data=await body(req),labels=photoDetails(data),title=requiredText(data.title,160);db.prepare('UPDATE media SET title=?,category=?,description=?,updated_at=? WHERE id=?').run(title,labels.category,labels.description,now(),row.id);audit('photo_labelled',row.id);json(res,200,publicMedia(getMedia(row.id)));return true;}
         if(req.method==='POST'&&match[2]==='check') {
           if(row.status==='processing') await track(poll(row));
           json(res,200,publicMedia(getMedia(row.id)));return true;
