@@ -13,6 +13,7 @@ The supplied AI Studio ZIP contains the existing Kotlin/Jetpack Compose Android 
 | Calendar | Month/week view and date filtering in India Standard Time, approval-gated plans, manual published records |
 | Library | Search, status/channel filters, edit, remix, text download, approved text sharing, owner JSON export |
 | Analytics | Aggregate results, per-draft campaign results and ROAS; all numbers are owner/staff supplied |
+| Search & AI discoverability | New (not in the original source): SEO checklist and keyword tracker, AIO checklist and target-question tracker, both with a live OpenAI web-search "Check now" against configured domains |
 | AI Assistant | Persistent shared conversation using clinic identity; save replies as drafts |
 | Settings | Editable shared clinic identity, provider status and role setup |
 | Roles | Owner approval/settings; staff planning/results; creator drafting/submission. Server-enforced role passwords, not individual employee accounts |

@@ -75,7 +75,7 @@ Editing approved or planned content returns it to Draft and clears the plan. The
 
 ## Studio tools and connections
 
-Content Creator, WhatsApp campaigns, Video Maker, Poster & media, AI Assistant, searchable library, an IST calendar and campaign analytics are now available. See [the source-port feature map](IMPORT_NOTES.md) for exact capabilities and limits.
+Content Creator, WhatsApp campaigns, Video Maker, Poster & media, AI Assistant, Search & AI discoverability (SEO and AIO tracking), a searchable library, an IST calendar and campaign analytics are now available. See [the source-port feature map](IMPORT_NOTES.md) for exact capabilities and limits.
 
 - Save clinic name, phone, address and brand rules in Settings. Every agent uses this profile.
 - For real Veo video clips, set `GEMINI_API_KEY` in Render Environment. `VEO_MODEL` defaults to `veo-3.1-fast-generate-preview`. Paid Google API access is required.
@@ -96,6 +96,18 @@ node --check public/app.js
 ```
 
 Tests cover authentication and CSRF-origin protection, approval and planning transitions, stale edits, missing AI configuration, agent failure handling, metrics validation, Responses parsing and persistence across restart. Browser verification should cover desktop and Android-sized layouts, generating a draft, approval, planning, offline shell loading and installability on the final HTTPS domain.
+
+## Search & AI discoverability
+
+Track how findable the clinic is on Google and in AI assistants such as ChatGPT or an AI Overview, alongside the existing content tools rather than in a separate app.
+
+Settings holds a shared list of up to ten site domains and a brand name, used by both checks below. Only the owner can change them.
+
+**SEO** keeps an eight-item on-page checklist (title tags, meta descriptions, alt text, schema, mobile speed, backlinks, Hindi indexing, sitemap freshness) and a keyword tracker. "Check now" on a keyword runs a live OpenAI Responses web search asking whether the configured domains currently rank for it, and saves the plain-text result with a timestamp. Requires `OPENAI_API_KEY` and `OPENAI_MODEL`, same as the specialist agents.
+
+**AIO organiser** keeps a six-item AI-optimisation checklist (Q&A formatting, structured data, cited sources, `llms.txt`, freshness, consistent brand mentions) and a list of target questions you want an AI assistant to answer using your content. "Check now" runs a live web search for the question and reports whether the brand is mentioned or cited; a question is automatically marked Cited when the model confirms it, otherwise its status is left for manual tracking (Not started / Drafted / Published).
+
+Both checks share the existing daily-quota mechanism (40 checks/day each) and the same OpenAI credentials as content generation — no separate API key or provider account is needed. Checks report what a live web search currently finds; treat results as directional, not an exact Search Console position.
 
 ## Weekly planning upgrade
 

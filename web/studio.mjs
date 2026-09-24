@@ -1,5 +1,6 @@
 import {photoCategories} from './public/video-options.js';
 import { createAdvertisements } from './advertisements.mjs';
+import { createDiscoverability } from './discoverability.mjs';
 import { brandVideo } from './video-branding.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, statSync, createReadStream, renameSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { defaultProfile, brandInstructions } from './brand.mjs';
 import { mediaProvider, ProviderError } from './media-provider.mjs';
 
-export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl }) {
+export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl }) {
   provider ||= mediaProvider(env);
   db.exec(`CREATE TABLE IF NOT EXISTS profile(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,text TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -72,6 +73,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
     } finally { running.delete(row.id); }
   }
   const ads=createAdvertisements({db,env,profile,provider,generateImpl,body,json,fail,requiredText,audit,quota,room,finish,getMedia,mediaDir,track,isStopped:()=>stopped,renderImpl:renderAdvertisementImpl});
+  const discover=createDiscoverability({db,env,audit,json,body,requiredText,fail,quota,checkImpl});
   const timer=setInterval(() => {
     if(stopped) return;
     for(const row of db.prepare("SELECT * FROM media WHERE status='processing'").all()) {
@@ -98,10 +100,11 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   }
   return {
     profile, metadata,
-    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads' }),
+    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads', ...discover.state() }),
     close: async () => { stopped=true; clearInterval(timer); await Promise.allSettled([...tasks]); },
     async route(req,res,path,role) {
       if(await ads.route(req,res,path,role))return true;
+      if(await discover.route(req,res,path,role))return true;
       const owner=()=>{if(role!=='owner') throw fail(403,'Only the owner can change this setting.');};
       if(path==='/api/weekly-plan' && req.method==='POST') {
         owner(); const data=await body(req);
