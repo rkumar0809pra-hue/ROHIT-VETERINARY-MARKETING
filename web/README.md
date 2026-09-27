@@ -97,17 +97,19 @@ node --check public/app.js
 
 Tests cover authentication and CSRF-origin protection, approval and planning transitions, stale edits, missing AI configuration, agent failure handling, metrics validation, Responses parsing and persistence across restart. Browser verification should cover desktop and Android-sized layouts, generating a draft, approval, planning, offline shell loading and installability on the final HTTPS domain.
 
-## Search & AI discoverability
+## SEO & AI Visibility and Meta connections
 
-Track how findable the clinic is on Google and in AI assistants such as ChatGPT or an AI Overview, alongside the existing content tools rather than in a separate app.
+Open **Start here → Check my website**, or **More tools → SEO & AI Visibility**. SEO and AIO share a single screen. The scanner checks the initial HTML of one public HTTPS page on rohitveterinary.com (including www), app.rohitveterinary.com or mart.rohitveterinary.com. It checks titles, descriptions, heading, canonical, noindex, phone, alt attributes, JSON-LD presence and readable text. It is not a browser render, full schema validator, page-speed report, crawl/indexing test or rank tracker. Private portal pages may intentionally be noindex. Scans do not modify the websites. DNS addresses are validated and pinned, redirects revalidated, and responses/time limited.
 
-Settings holds a shared list of up to ten site domains and a brand name, used by both checks below. Only the owner can change them.
+Owners can create a Hindi website/FAQ draft using the saved clinic profile; it enters the existing draft approval workflow. Applying content to the clinic and mart sites still requires access to their source code or CMS. Optional research uses OpenAI web search and retains source URLs and timestamps. It must not be treated as Google ranking data or evidence of mentions by another AI product. AIO research never automatically changes a question to Cited. Checklists are self-reported. There is no required llms.txt or special AI schema for Google AI features. Reference: https://developers.google.com/search/docs/appearance/ai-features
 
-**SEO** keeps an eight-item on-page checklist (title tags, meta descriptions, alt text, schema, mobile speed, backlinks, Hindi indexing, sitemap freshness) and a keyword tracker. "Check now" on a keyword runs a live OpenAI Responses web search asking whether the configured domains currently rank for it, and saves the plain-text result with a timestamp. Requires `OPENAI_API_KEY` and `OPENAI_MODEL`, same as the specialist agents.
+Limits per rolling day: 40 page scans, 40 keyword searches, 40 question searches and 20 website drafts. Scans do not use an AI provider; research and drafts use the configured OpenAI account. Results are persisted in the existing SQLite file and included in owner workspace export.
 
-**AIO organiser** keeps a six-item AI-optimisation checklist (Q&A formatting, structured data, cited sources, `llms.txt`, freshness, consistent brand mentions) and a list of target questions you want an AI assistant to answer using your content. "Check now" runs a live web search for the question and reports whether the brand is mentioned or cited; a question is automatically marked Cited when the model confirms it, otherwise its status is left for manual tracking (Not started / Drafted / Published).
+**Facebook & Instagram** provides an owner-triggered, read-only connection check, Page name, recent 10 published Facebook posts and optional Instagram professional account information. Credentials stay in Render Environment; no credentials or provider paging URLs enter browser state, exports or AI prompts. A verified Page only confirms read access, not publishing permission. The snapshot is cleared from view when credentials change and failures are shown explicitly.
 
-Both checks share the existing daily-quota mechanism (40 checks/day each) and the same OpenAI credentials as content generation — no separate API key or provider account is needed. Checks report what a live web search currently finds; treat results as directional, not an exact Search Console position.
+Set `META_PAGE_ID` and `META_PAGE_ACCESS_TOKEN` (a Page token), optionally `META_INSTAGRAM_ACCOUNT_ID` for a linked professional account using the Facebook Login integration. `META_API_VERSION` defaults to `v25.0`. Page reading requires `pages_read_engagement`; Instagram reading requires `instagram_basic` and account access. Permissions and access level must suit the Meta app and accounts. Generate tokens using your own Meta app, store only in Render, redeploy, then use **Check connection & refresh posts**. Reference: https://developers.facebook.com/docs/pages-api/getting-started/ . Replace expired tokens in Render. This release has no OAuth onboarding, automatic publishing, ads/spend, lead retrieval or WhatsApp sending. Existing manual publishing and approval behaviour stays explicit.
+
+Frontend modules belong in `web/public/`; tests belong in `web/test/`. Root-level uploaded copies were moved into those folders and wired into the live navigation and static route allowlist.
 
 ## Weekly planning upgrade
 

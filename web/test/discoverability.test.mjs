@@ -12,7 +12,7 @@ async function fixture(t, options = {}) {
     DATA_FILE: ":memory:",
     ...options.env,
   };
-  const server = createApp({ env, checkImpl: options.checkImpl });
+  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise((r) => server.close(r)));
   let cookie = "";
@@ -39,7 +39,7 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   const f = await fixture(t);
   await f.login();
   const s = (await f.req("state")).data;
-  assert.deepEqual(s.seo, { domains: [], brand: "", checklist: {}, keywords: [] });
+  assert.deepEqual(s.seo, { domains: [], brand: "", checklist: {}, keywords: [], scans: [] });
   assert.deepEqual(s.aio, { checklist: {}, queries: [] });
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
@@ -80,7 +80,7 @@ test("keyword add/delete and check requires a configured domain and AI setup", a
   assert.equal(added.status, 201);
   assert.equal(added.data.keywords.length, 1);
   const id = added.data.keywords[0].id;
-  assert.equal(added.data.keywords[0].rank, "Not ranking");
+  assert.equal(added.data.keywords[0].rank, "Not measured");
 
   // No domain configured yet takes priority over the AI-not-configured case.
   assert.equal((await f.req(`seo/keywords/${id}/check`, "POST", {})).status, 400);
@@ -92,11 +92,11 @@ test("keyword add/delete and check requires a configured domain and AI setup", a
   assert.equal(del.data.keywords.length, 0);
 });
 
-test("a stubbed live rank check updates the keyword without calling the real API", async (t) => {
+test("web research is saved with sources without treating it as rank measurement", async (t) => {
   let received;
   const f = await fixture(t, {
     env: { OPENAI_API_KEY: "mock", OPENAI_MODEL: "mock" },
-    checkImpl: async (args) => { received = args; return "rohitveterinary.com ranks around position 6 for this term."; },
+    checkImpl: async (args) => { received = args; return {text:"A relevant clinic page was found.",sources:[{title:"Clinic",url:"https://rohitveterinary.com/"}]}; },
   });
   await f.login();
   await f.req("seo/settings", "PUT", { domains: ["rohitveterinary.com"], brand: "RVH" });
@@ -107,11 +107,13 @@ test("a stubbed live rank check updates the keyword without calling the real API
   assert.match(received.prompt, /poultry vaccination schedule/);
   assert.match(received.prompt, /rohitveterinary\.com/);
   const kw = checked.data.keywords[0];
-  assert.match(kw.lastChecked, /position 6/);
+  assert.match(kw.lastChecked, /clinic page/);
+  assert.match(received.prompt,/not a Google rank tracker/);
+  assert.equal(kw.sources[0].url,"https://rohitveterinary.com/");
   assert.ok(kw.lastCheckedAt);
 });
 
-test("AIO query check auto-marks Cited only when the model reports it, and status can be set manually", async (t) => {
+test("AIO research never automatically claims another AI product cited the clinic", async (t) => {
   const cited = await fixture(t, {
     env: { OPENAI_API_KEY: "mock", OPENAI_MODEL: "mock" },
     checkImpl: async () => "Rohit Veterinary House is cited in the top AI Overview answer.\nCITED",
@@ -121,8 +123,8 @@ test("AIO query check auto-marks Cited only when the model reports it, and statu
   const q1 = await cited.req("aio/queries", "POST", { query: "how to treat mastitis in cattle" });
   const id1 = q1.data.queries[0].id;
   const r1 = await cited.req(`aio/queries/${id1}/check`, "POST", {});
-  assert.equal(r1.data.queries[0].status, "Cited");
-  assert.doesNotMatch(r1.data.queries[0].lastChecked, /CITED/);
+  assert.equal(r1.data.queries[0].status, "Not started");
+
 
   const notCited = await fixture(t, {
     env: { OPENAI_API_KEY: "mock", OPENAI_MODEL: "mock" },
@@ -169,6 +171,7 @@ test("every client module the app statically imports is actually servable (no 40
     ["/studio-ui.js", "text/javascript"],
     ["/advertisement-ui.js", "text/javascript"],
     ["/discoverability-ui.js", "text/javascript"],
+    ["/meta-ui.js", "text/javascript"],
     ["/video-options.js", "text/javascript"],
     ["/styles.css", "text/css"],
     ["/", "text/html"],
@@ -179,3 +182,47 @@ test("every client module the app statically imports is actually servable (no 40
   }
 });
 
+
+test('website scan persists, website draft enters review workflow with clinic profile, and owner gate holds',async t=>{
+ let received;
+ const f=await fixture(t,{env:{OPENAI_API_KEY:'mock',OPENAI_MODEL:'mock'},scanImpl:async({url,profile})=>({url,phone:profile.phone,checks:[],checkedAt:new Date().toISOString()}),generateImpl:async args=>{received=args;return 'रोहित भेटनरी हाउस — 9709095993';}});
+ await f.login('staff');
+ assert.equal((await f.req('discover/scan','POST',{url:'https://rohitveterinary.com/'})).status,403);
+ assert.equal((await f.req('discover/draft','POST',{topic:'Booking',kind:'aio'})).status,403);
+ await f.login();
+ assert.equal((await f.req('discover/scan','POST',{url:'https://rohitveterinary.com/'})).status,200);
+ const r=await f.req('discover/draft','POST',{topic:'Booking a consultation',kind:'aio'});
+ assert.equal(r.status,201);
+ const s=(await f.req('state')).data;
+ assert.equal(s.seo.scans.length,1);
+ assert.equal(s.drafts.find(d=>d.id===r.data.id).status,'draft');
+ assert.equal(received.profile.phone,'9709095993');
+ assert.match(received.brief,/Do not promise search rankings/);
+ const exported=(await f.req('export')).data;assert.equal(exported.seo.scans.length,1);
+});
+
+test('Meta verification makes GET requests only, keeps credentials private and tolerates optional Instagram failure',async t=>{
+ const requests=[];
+ const f=await fixture(t,{env:{META_PAGE_ID:'1234',META_PAGE_ACCESS_TOKEN:'private-test-token',META_INSTAGRAM_ACCOUNT_ID:'5678'},metaFetchImpl:async(url,options)=>{
+  requests.push({url,options});
+  if(url.includes('/5678?'))return new Response(JSON.stringify({error:{code:190,message:'private-test-token'}}),{status:400});
+  if(url.includes('/published_posts?'))return Response.json({data:[{id:'1234_99',message:'Hello',permalink_url:'https://www.facebook.com/1234/posts/99',created_time:'2026-09-27T10:00:00Z'}],paging:{next:'https://example.com/?access_token=private-test-token'}});
+  return Response.json({id:'1234',name:'Clinic Page'});
+ }});
+ assert.equal((await f.req('meta/check','POST',{})).status,401);
+ await f.login('staff');assert.equal((await f.req('meta/check','POST',{})).status,403);
+ await f.login();const checked=await f.req('meta/check','POST',{});
+ assert.equal(checked.status,200);assert.equal(checked.data.status,'Verified');assert.equal(checked.data.posts.length,1);
+ assert.match(checked.data.notes[0],/expired/);
+ assert.equal(requests.length,3);assert.ok(requests.every(x=>x.options.method==='GET'&&!x.url.includes('private-test-token')));
+ assert.doesNotMatch(JSON.stringify((await f.req('state')).data),/private-test-token|fingerprint|paging/);
+ assert.doesNotMatch(JSON.stringify((await f.req('export')).data),/private-test-token|fingerprint/);
+ assert.equal((await f.req('meta/check','POST',{})).status,429);
+});
+
+test('Meta rejects missing configuration and safely reports provider errors',async t=>{
+ const empty=await fixture(t);await empty.login();assert.equal((await empty.req('meta/check','POST',{})).status,503);
+ const failed=await fixture(t,{env:{META_PAGE_ID:'1234',META_PAGE_ACCESS_TOKEN:'secret-sentinel'},metaFetchImpl:async()=>new Response(JSON.stringify({error:{code:190,message:'secret-sentinel'}}),{status:400})});
+ await failed.login();const r=await failed.req('meta/check','POST',{});assert.equal(r.status,502);assert.doesNotMatch(JSON.stringify(r),/secret-sentinel/);
+ assert.equal((await failed.req('state')).data.metaConnection.status,'Needs attention');
+});

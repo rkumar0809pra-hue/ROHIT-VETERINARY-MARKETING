@@ -1,3 +1,5 @@
+import {discoverPage,discoverabilityChange,discoverabilityClick,discoverabilitySubmit} from '/discoverability-ui.js';
+import {metaPage,metaClick} from '/meta-ui.js';
 import {photoCategories} from './video-options.js';
 import {advertisementSection,advertisementChange,advertisementClick,advertisementSubmit} from '/advertisement-ui.js';
 const categories=['Pet Care Awareness','Cattle & Dairy Health','Goat Farming Support','Poultry Care','Vaccination Reminder','Deworming Reminder','Seasonal Disease Prevention','Product Promotion','Clinic Consultation','Emergency Help Messaging','Festival & Local Campaign'];
@@ -56,8 +58,8 @@ export function profileSection(c){const {state,esc}=c;const p=state.profile;retu
 export function editorExtras(c,d){if(!d)return "";const {esc,state}=c;const m=meta(d);let result={};try{result=JSON.parse(d.metrics_json||'{}');}catch{}
  return `<section class="card"><h2>Creative tools</h2><p>${esc(m.platform||'General')} · ${esc(m.audience||'General audience')}</p><div class="actions"><button data-remix="${d.id}">Open in Content Creator</button><button data-media-brief="image" data-id="${d.id}">Create image</button><button data-media-brief="video" data-id="${d.id}">Create video</button><button data-download-draft="${d.id}">Download text</button></div>${d.published_url?`<p>Published link: <a href="${esc(d.published_url)}" target="_blank" rel="noopener noreferrer">Open published post</a></p>`:''}${['approved','planned','published'].includes(d.status)?`<button data-share-approved="${d.id}">Share approved text</button>`:''}${['approved','planned'].includes(d.status)&&state.role!=='creator'?`<form id="publish-form">${input('Published post link (HTTPS)','published-url','',esc,'url',1000)}<label class="check"><input id="published-confirm" type="checkbox" required>I have published this content on the platform.</label><button class="primary">Record as published</button></form>`:''}</section>${state.role!=='creator'?`<section class="card"><h2>Campaign results</h2><p class="note">Enter actual results from the platform. These are manual records, not delivery confirmations.</p><form id="results-form">${input('Reporting period','result-period',result.period||'',esc,'text',160)}<div class="metrics-grid">${['spend','clicks','leads','revenue','sent','failed','responses'].map(k=>`<label>${esc(k)}<input name="${k}" type="number" min="0" max="10000000000" step="${['spend','revenue'].includes(k)?'0.01':'1'}" value="${result[k]??0}" required></label>`).join('')}</div><button class="primary">Save actual results</button></form></section>`:''}`;}
 export function campaignAnalytics(c){const rows=c.state.drafts.map(d=>{try{return {d,m:JSON.parse(d.metrics_json||'{}')}}catch{return {d,m:{}}}}).filter(x=>x.m.period);return `<section class="card"><h2>Campaign performance</h2><p class="note">Manually recorded periods can differ. These rows are separate from the aggregate totals above.</p><div class="table-wrap"><table><thead><tr><th>Campaign</th><th>Period</th><th>Spend ₹</th><th>Leads</th><th>Revenue ₹</th><th>ROAS</th></tr></thead><tbody>${rows.map(({d,m})=>`<tr><td><button data-draft="${d.id}">${c.esc(d.title)}</button></td><td>${c.esc(m.period)}</td><td>${m.spend}</td><td>${m.leads}</td><td>${m.revenue}</td><td>${m.spend>0?(m.revenue/m.spend).toFixed(2)+'×':'—'}</td></tr>`).join('')||'<tr><td colspan="6">Record actual campaign results from a draft’s review page.</td></tr>'}</tbody></table></div></section>`;}
-export function renderStudio(page,c){return ({manager:()=>managerPage(c),approvals:()=>approvalPage(c),creator:()=>builderPage(c),whatsapp:()=>builderPage(c,true),video:()=>videoPage(c),images:()=>imagePage(c),chat:()=>chatPage(c),calendar:()=>calendar(c)})[page]?.();}
-export function studioInput(e,c){const id=e.target.id;
+export function renderStudio(page,c){return ({discover:()=>discoverPage(c),meta:()=>metaPage(c),manager:()=>managerPage(c),approvals:()=>approvalPage(c),creator:()=>builderPage(c),whatsapp:()=>builderPage(c,true),video:()=>videoPage(c),images:()=>imagePage(c),chat:()=>chatPage(c),calendar:()=>calendar(c)})[page]?.();}
+export function studioInput(e,c){discoverabilityChange(e,c);const id=e.target.id;
  if(id.startsWith('b-')){builder[id.slice(2)]=e.target.value;const node=document.querySelector('#post-preview');if(node)node.innerHTML=preview({...builder,platform:c.page==='whatsapp'?'WhatsApp':builder.platform},c.state.profile,c.esc);}
  if(id.startsWith('v-'))video[id.slice(2)]=e.target.value;
  if(id.startsWith('i-'))poster[id.slice(2)]=e.target.value;
@@ -66,6 +68,7 @@ export function studioInput(e,c){const id=e.target.id;
  if(id==='library-search'){librarySearch=e.target.value;document.querySelector('#library-results').innerHTML=libraryResults(c);}
 }
 export function studioChange(e,c){
+ if(e.target.dataset.discoverCheck){discoverabilityClick(e.target,c).catch(err=>c.notice(err.message));return;}
  advertisementChange(e,c);
  if(e.target.id==='photo-filter'){photoFilter=e.target.value;c.render();}
  if(e.target.id==='library-channel'){libraryChannel=e.target.value;c.render();}
@@ -83,6 +86,7 @@ async function posterDownload(profile,title,message){
  const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));downloadBlob(blob,'rvh-branded-poster.png');
 }
 export async function studioClick(el,c){
+ if(await discoverabilityClick(el,c)||await metaClick(el,c))return true;
  if(await advertisementClick(el,c))return true;
  const {state,api,refresh,render,notice,go}=c;
  if(el.dataset.template!==undefined){const t=templates[Number(el.dataset.template)];builder={...builder,title:t[0],category:t[1],audience:t[2],service:t[3]};render();return true;}
@@ -106,6 +110,7 @@ export async function studioClick(el,c){
  return false;
 }
 export async function studioSubmit(form,submitter,c){
+ if(await discoverabilitySubmit(form,c))return true;
  if(await advertisementSubmit(form,c))return true;
  const {state,api,refresh,render,notice,go}=c;const value=id=>document.getElementById(id).value;
  if(form.dataset.photoEdit){const data=Object.fromEntries(new FormData(form));await api('media/'+form.dataset.photoEdit,'PATCH',data);await refresh();render();notice('Photo details saved.');return true;}

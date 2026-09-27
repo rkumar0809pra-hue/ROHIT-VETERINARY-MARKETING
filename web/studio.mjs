@@ -1,5 +1,6 @@
 import {photoCategories} from './public/video-options.js';
 import { createAdvertisements } from './advertisements.mjs';
+import { createMetaConnection } from './meta-connection.mjs';
 import { createDiscoverability } from './discoverability.mjs';
 import { brandVideo } from './video-branding.mjs';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { defaultProfile, brandInstructions } from './brand.mjs';
 import { mediaProvider, ProviderError } from './media-provider.mjs';
 
-export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl }) {
+export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl, scanImpl, metaFetchImpl }) {
   provider ||= mediaProvider(env);
   db.exec(`CREATE TABLE IF NOT EXISTS profile(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,text TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -73,7 +74,8 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
     } finally { running.delete(row.id); }
   }
   const ads=createAdvertisements({db,env,profile,provider,generateImpl,body,json,fail,requiredText,audit,quota,room,finish,getMedia,mediaDir,track,isStopped:()=>stopped,renderImpl:renderAdvertisementImpl});
-  const discover=createDiscoverability({db,env,audit,json,body,requiredText,fail,quota,checkImpl});
+  const discover=createDiscoverability({db,env,audit,json,body,requiredText,fail,quota,checkImpl,profile,generateImpl,scanImpl});
+  const metaConnection=createMetaConnection({db,env,audit,json,fail,fetchImpl:metaFetchImpl});
   const timer=setInterval(() => {
     if(stopped) return;
     for(const row of db.prepare("SELECT * FROM media WHERE status='processing'").all()) {
@@ -100,10 +102,11 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   }
   return {
     profile, metadata,
-    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads', ...discover.state() }),
+    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads', ...discover.state(), metaConnection:metaConnection.state() }),
     close: async () => { stopped=true; clearInterval(timer); await Promise.allSettled([...tasks]); },
     async route(req,res,path,role) {
       if(await ads.route(req,res,path,role))return true;
+      if(await metaConnection.route(req,res,path,role))return true;
       if(await discover.route(req,res,path,role))return true;
       const owner=()=>{if(role!=='owner') throw fail(403,'Only the owner can change this setting.');};
       if(path==='/api/weekly-plan' && req.method==='POST') {
@@ -163,7 +166,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       if(path==='/api/chat'&&req.method==='DELETE') {owner();db.prepare('DELETE FROM chat').run();audit('chat_cleared');json(res,200,{ok:true});return true;}
       if(path==='/api/export'&&req.method==='GET') {
         owner();res.setHeader('Content-Disposition','attachment; filename="rvh-workspace.json"');
-        json(res,200,{exportedAt:now(),profile:profile(),drafts:db.prepare('SELECT * FROM drafts').all(),metrics:db.prepare('SELECT * FROM metrics').all(),media:media(),advertisements:ads.list(),chat:db.prepare('SELECT * FROM chat').all(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 1000').all()});return true;
+        json(res,200,{exportedAt:now(),...discover.state(),metaConnection:metaConnection.state(),profile:profile(),drafts:db.prepare('SELECT * FROM drafts').all(),metrics:db.prepare('SELECT * FROM metrics').all(),media:media(),advertisements:ads.list(),chat:db.prepare('SELECT * FROM chat').all(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 1000').all()});return true;
       }
       if(path==='/api/media' && req.method==='POST') {
         const data=await body(req,9*1024*1024);
