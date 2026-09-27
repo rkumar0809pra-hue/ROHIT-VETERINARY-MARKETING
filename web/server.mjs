@@ -10,6 +10,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agents, generate } from "./agents.mjs";
+import { createAppConnections } from "./app-connections.mjs";
 import { createStudio } from "./studio.mjs";
 const root = dirname(fileURLToPath(import.meta.url));
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -90,11 +91,13 @@ export function createApp({ env = process.env, generateImpl = generate, provider
     });
     res.end(JSON.stringify(data));
   };
-  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,metaFetchImpl});
+  const appConnections=createAppConnections({db,env,json,body,fail,audit});
+  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,metaFetchImpl,appConnections});
   const files = {
     "/video-options.js": ["video-options.js", "text/javascript"],
     "/devanagari.ttf": ["../assets/NotoSansDevanagari.ttf", "font/ttf"],
     "/advertisement-ui.js": ["advertisement-ui.js", "text/javascript"],
+    "/connections-ui.js": ["connections-ui.js", "text/javascript"],
     "/meta-ui.js": ["meta-ui.js", "text/javascript"],
     "/discoverability-ui.js": ["discoverability-ui.js", "text/javascript"],
     "/studio-ui.js": ["studio-ui.js", "text/javascript"],
@@ -128,6 +131,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
         return res.end(readFileSync(join(root, "public", file)));
       }
       if (!path.startsWith("/api/")) throw fail(404, "Not found.");
+      if(await appConnections.machineRoute(req,res,path))return;
       if (req.method !== "GET" && req.headers.origin !== origin)
         throw fail(403, "Request origin not allowed.");
       if (path === "/api/login" && req.method === "POST") {
@@ -162,6 +166,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
       if ((sessions.get(sessionKey)?.expiry || 0) <= Date.now())
         throw fail(401, "Please sign in.");
       const role=sessions.get(sessionKey).role;
+      if(await appConnections.route(req,res,path,role))return;
       if(await studio.route(req,res,path,role)) return;
       if (path === "/api/logout" && req.method === "POST") {
         sessions.delete(sessionKey);

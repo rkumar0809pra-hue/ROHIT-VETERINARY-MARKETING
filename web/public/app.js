@@ -34,6 +34,7 @@ const names = {
   analytics: "Results",
   discover: "SEO & AI Visibility",
   meta: "Facebook & Instagram",
+  connections: "Connected apps",
   settings: "Settings",
 };
 const icons = {
@@ -123,7 +124,7 @@ function dashboard() {
 function navigation(){
  const link=key=>`<button data-page="${key}" class="${key===page?'active':''}" ${key===page?'aria-current="page"':''}><span>${icons[key]||'•'}</span>${names[key]}</button>`;
  const primary=['dashboard','creator','video','images','whatsapp','approvals','library'];
- const more=['manager','chat','calendar','analytics','discover','meta','agents','settings'];
+ const more=['manager','chat','calendar','analytics','discover','meta','connections','agents','settings'];
  return primary.map(link).join('')+`<details ${more.includes(page)?'open':''}><summary>More tools</summary>${more.map(link).join('')}</details>`;
 }
 const agentExamples={strategy:'Plan a week of awareness posts for pet owners in Lohardaga. Ask readers to call for appointment availability.',content:'Write a short Hindi Facebook post introducing our clinic and inviting owners to call.',video:'Write a 30-second Hindi script introducing our clinic, with a phone number at the end.',whatsapp:'Write a short Hindi consultation invitation for opted-in customers, including an opt-out line.',analytics:'Explain the saved campaign results. Identify missing information and suggest three improvements.',review:'Paste the draft to check here. Check the clinic name, phone, clarity and unsupported claims.'};
@@ -175,7 +176,7 @@ function analytics() {
     )}</div><div class="actions"><button class="primary">Save totals</button></div></form><div class="card"><h2>Turn results into a next step</h2><p>The performance analyst uses these saved totals and the reporting context you put in the brief. Missing metrics are never filled with sample results.</p><button data-agent="analytics">Open performance analyst ↗</button><p class="note">Revenue / ad spend is ROAS, not profit or ROI. A dash means the inputs needed for that calculation are unavailable.</p></div></div>`;
 }
 function settings() {
-  return `<div class="heading"><h1>Your workspace</h1></div><div class="split"><div class="card"><h2>Desktop & Android</h2><p>Open this same app address on each device to access the shared workspace.</p><button data-install>Install app</button><p class="install-guide">On desktop, use Chrome or Edge’s install app option.<br>On Android, open in Chrome and choose Install app or Add to Home screen.</p><p class="note">Installation requires HTTPS or localhost. The interface opens offline; signing in, drafts and agents require a connection.</p></div><div class="card"><h2>Connections</h2><p>OpenAI agents: <strong>${state.aiConfigured ? "Configured" : "Setup required"}</strong></p><p>Model: ${esc(state.model || "Not configured")}</p><p>Facebook / Instagram: ${esc(state.metaConnection?.status||"Not checked")}</p><button data-page="meta">Open Meta connections</button><button data-page="discover">SEO & AI Visibility</button><p>WhatsApp sending: Not connected</p><p class="note">Server configuration controls API credentials. Never put keys into a campaign brief. Team access is configured below.</p><button data-logout>Sign out</button></div></div>`;
+  return `<div class="heading"><h1>Your workspace</h1></div><div class="split"><div class="card"><h2>Desktop & Android</h2><p>Open this same app address on each device to access the shared workspace.</p><button data-install>Install app</button><p class="install-guide">On desktop, use Chrome or Edge’s install app option.<br>On Android, open in Chrome and choose Install app or Add to Home screen.</p><p class="note">Installation requires HTTPS or localhost. The interface opens offline; signing in, drafts and agents require a connection.</p></div><div class="card"><h2>Connections</h2><p>OpenAI agents: <strong>${state.aiConfigured ? "Configured" : "Setup required"}</strong></p><p>Model: ${esc(state.model || "Not configured")}</p><p>Facebook / Instagram: ${esc(state.metaConnection?.status||"Not checked")}</p><button data-page="meta">Open Meta connections</button><button data-page="discover">SEO & AI Visibility</button><button data-page="connections">Connect clinic, Mart & chatbot</button><p>WhatsApp sending: Not connected</p><p class="note">Server configuration controls API credentials. Never put keys into a campaign brief. Team access is configured below.</p><button data-logout>Sign out</button></div></div>`;
 }
 function render() {
   if (!state) {

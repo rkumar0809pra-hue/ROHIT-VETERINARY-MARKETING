@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { defaultProfile, brandInstructions } from './brand.mjs';
 import { mediaProvider, ProviderError } from './media-provider.mjs';
 
-export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl, scanImpl, metaFetchImpl }) {
+export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl, scanImpl, metaFetchImpl, appConnections }) {
   provider ||= mediaProvider(env);
   db.exec(`CREATE TABLE IF NOT EXISTS profile(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,text TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -102,7 +102,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
   }
   return {
     profile, metadata,
-    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads', ...discover.state(), metaConnection:metaConnection.state() }),
+    state: () => ({ profile: profile(), media: media(), advertisements:ads.list(), chat:db.prepare('SELECT * FROM chat ORDER BY created_at DESC LIMIT 100').all().reverse(), mediaConfigured:{video:Boolean(env.GEMINI_API_KEY),image:Boolean(env.OPENAI_API_KEY)}, mediaModels:{video:env.VEO_MODEL||'veo-3.1-fast-generate-preview',image:env.OPENAI_IMAGE_MODEL||'gpt-image-1'}, mediaBytes:db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM media').get().n, release:'studio-3-ads', ...discover.state(), metaConnection:metaConnection.state(), connectedApps:appConnections.state() }),
     close: async () => { stopped=true; clearInterval(timer); await Promise.allSettled([...tasks]); },
     async route(req,res,path,role) {
       if(await ads.route(req,res,path,role))return true;
@@ -118,7 +118,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
         if(managerBusy)throw fail(409,'A weekly plan is already being prepared.');
         quota('weekly plans',4);managerBusy=true;
         try {
-          const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:'Hindi',profile:profile(),agent:{id:'manager',name:'Weekly marketing manager',instruction:'Return ONLY a JSON object with an items array of exactly seven entries. Each entry has title, content (ready to review Hindi caption or video storyboard), platform (Facebook, Instagram, WhatsApp or Video), agent (content, whatsapp or video), and day (integer 0 through 6, unique). Respect the supplied availability and budget; no invented offers. These are assigned drafts, not executed tasks. Include clinic contact details. Override the plain text formatting instruction with JSON for this structured task.'},brief:JSON.stringify({goal,availability,weeklyBudgetINR:data.budget,week:data.week})});
+          const answer=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,language:'Hindi',profile:profile(),agent:{id:'manager',name:'Weekly marketing manager',instruction:'Return ONLY a JSON object with an items array of exactly seven entries. Each entry has title, content (ready to review Hindi caption or video storyboard), platform (Facebook, Instagram, WhatsApp or Video), agent (content, whatsapp or video), and day (integer 0 through 6, unique). Respect the supplied availability and budget; no invented offers. These are assigned drafts, not executed tasks. Include clinic contact details. Override the plain text formatting instruction with JSON for this structured task.'},brief:JSON.stringify({goal,availability,weeklyBudgetINR:data.budget,week:data.week,connectedAppDailyReports:appConnections.summary(),reportGuidance:'These are separate source-reported daily snapshots, not attributed campaign results. Do not add clinic and mart revenue, infer available slots or count chatbot requests as confirmed bookings. Stale or paused data is historical only.'})});
           let plan;try{plan=JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g,''));}catch{throw fail(502,'The manager returned an invalid plan. No drafts were saved.');}
           if(!Array.isArray(plan.items)||plan.items.length!==7||new Set(plan.items.map(x=>x.day)).size!==7)throw fail(502,'The manager must return seven unique daily drafts.');
           for(const x of plan.items){requiredText(x.title,160);requiredText(x.content,20000);if(!Number.isInteger(x.day)||x.day<0||x.day>6||!['content','video','whatsapp'].includes(x.agent)||!['Facebook','Instagram','WhatsApp','Video'].includes(x.platform))throw fail(502,'Invalid task in the generated plan.');}
@@ -166,7 +166,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       if(path==='/api/chat'&&req.method==='DELETE') {owner();db.prepare('DELETE FROM chat').run();audit('chat_cleared');json(res,200,{ok:true});return true;}
       if(path==='/api/export'&&req.method==='GET') {
         owner();res.setHeader('Content-Disposition','attachment; filename="rvh-workspace.json"');
-        json(res,200,{exportedAt:now(),...discover.state(),metaConnection:metaConnection.state(),profile:profile(),drafts:db.prepare('SELECT * FROM drafts').all(),metrics:db.prepare('SELECT * FROM metrics').all(),media:media(),advertisements:ads.list(),chat:db.prepare('SELECT * FROM chat').all(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 1000').all()});return true;
+        json(res,200,{exportedAt:now(),...discover.state(),metaConnection:metaConnection.state(), connectedApps:appConnections.state(),profile:profile(),drafts:db.prepare('SELECT * FROM drafts').all(),metrics:db.prepare('SELECT * FROM metrics').all(),media:media(),advertisements:ads.list(),chat:db.prepare('SELECT * FROM chat').all(),audit:db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 1000').all()});return true;
       }
       if(path==='/api/media' && req.method==='POST') {
         const data=await body(req,9*1024*1024);

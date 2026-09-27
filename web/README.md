@@ -143,3 +143,6 @@ Uploaded photos can be labelled by clinic area with a factual description. Owner
 
 ### Simple task interface
 Start here offers six tasks with Hindi labels. The sidebar keeps daily creation, review and saved work visible; planning, assistant, calendar, results, specialists and settings are under More tools. Video briefs use three steps with Back/Next navigation; pressing Enter on earlier steps cannot submit an AI planning request. Post and WhatsApp editors collapse optional targeting, headline, hashtag and creative controls. Specialist agents include example requests. Approval and paid generation gates are unchanged.
+
+### Clinic, Mart and chatbot connection preparation
+More tools → Connected apps has three independently paused/ enabled data connections. Each accepts only authenticated, source-scoped daily aggregate snapshots; no names, clinical data or chat text. Tokens stay server-side. Reports feed the weekly planner with explicit source/time labels and remain separate from campaign attribution. See [the connection kit](integrations/README.md) for Python/Node senders, metric definitions and rollout instructions. Source-side database extraction and scheduling are not installed yet.
