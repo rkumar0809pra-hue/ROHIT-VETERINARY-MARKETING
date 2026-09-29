@@ -1,3 +1,4 @@
+import { createOptimizer } from './optimizer.mjs';
 import { randomUUID } from 'node:crypto';
 import { scanWebsite, SCAN_HOSTS } from './website-scan.mjs';
 
@@ -78,9 +79,11 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     }
   }
 
+  const optimizer=createOptimizer({db,env,audit,json,body,fail});
   return {
-    state: () => ({ seo: readSeo(), aio: readAio(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, scanHosts: SCAN_HOSTS }),
     async route(req, res, path, role) {
+      if(await optimizer.route(req,res,path,role))return true;
       const owner = () => { if (role !== 'owner') throw fail(403, 'Only the owner can change this setting.'); };
 
       if(path === '/api/discover/scan' && req.method === 'POST') {
