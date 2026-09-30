@@ -14,18 +14,24 @@ Task decisions and report history use the existing SQLite database. Ensure DATA_
 
 ## Search Console read-only authentication
 
-One Google OAuth authorization can cover both properties if that Google identity has access:
-- https://www.rohitveterinary.com/
-- https://app.rohitveterinary.com/
+The Marketing Optimizer now includes its own Google OAuth flow. In Render configure these server-only variables:
 
-Enable the Search Console API in the Google project and obtain an OAuth refresh token with https://www.googleapis.com/auth/webmasters.readonly scope through Google's authorization flow. Configure these server secrets in Render:
-- GSC_CLIENT_ID
-- GSC_CLIENT_SECRET
-- GSC_REFRESH_TOKEN
+- `APP_ORIGIN=https://marketing.rohitveterinary.com`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI=https://marketing.rohitveterinary.com/api/auth/google/callback`
 
-Do not put credentials in browser code or paste them into app forms. A built-in Google consent/callback screen is not included in this revision; an administrator must provision the OAuth credentials first. Merely having property links does not grant access. Redeploy after configuration, then use Reports → Import last 28 available days for each property. The import verifies access; “credentials configured” does not claim a successful connection.
+In the same Google OAuth client, authorize:
 
-Imports request final Web Search data for a 28-day period ending three days before the request. Dates retain Search Console's reporting semantics. No rows is shown as no data, not invented zero metrics. Google totals are property-level, not attributed to individual improvements. Up to 30 reports are retained. No background scheduler or paid AI request runs during imports.
+- JavaScript origin: `https://marketing.rohitveterinary.com`
+- Redirect URI: `https://marketing.rohitveterinary.com/api/auth/google/callback`
+- Scope: `https://www.googleapis.com/auth/webmasters.readonly`
+
+The owner signs in to Marketing Studio, opens Reports, and chooses **Connect Google Search Console**. The server uses a short-lived one-time OAuth state, stores the returned refresh token encrypted in the existing SQLite database, and never returns it to the browser. Search Console properties are discovered from the connected Google account rather than hard-coded.
+
+The Reports screen supports 7-day, 28-day and 3-month imports with clicks, impressions, CTR, average position, top queries, top pages and factual opportunity lists. Disconnect attempts to revoke the Google token and removes the local credential.
+
+Keep `DATA_FILE` on the Render persistent disk so the encrypted Google authorization survives deploys/restarts. Changing `GOOGLE_CLIENT_SECRET` or `APP_ORIGIN` makes the stored encrypted token unreadable; reconnect Google after such a change.
 
 ## Validation
 
