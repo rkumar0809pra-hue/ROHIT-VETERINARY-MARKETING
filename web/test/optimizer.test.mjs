@@ -60,6 +60,10 @@ test('Search Console sync uses discovered properties, date ranges and returns da
      const requestBody=JSON.parse(options.body),dims=requestBody.dimensions||[];
      if(!dims.length)return {ok:true,json:async()=>({rows:[{clicks:30,impressions:500,ctr:.06,position:8.2}]})};
      if(dims[0]==='date')return {ok:true,json:async()=>({rows:[{keys:['2026-09-25'],clicks:3,impressions:50,ctr:.06,position:7.5}]})};
+     if(dims[0]==='query'&&dims[1]==='page')return {ok:true,json:async()=>({rows:[
+       {keys:['anronil bolus','https://mart.rohitveterinary.com/'],clicks:0,impressions:102,ctr:0,position:8.2},
+       {keys:['vet clinic lohardaga','https://rohitveterinary.com/'],clicks:1,impressions:20,ctr:.05,position:3}
+     ]})};
      if(dims[0]==='query')return {ok:true,json:async()=>({rows:[{keys:['vet clinic lohardaga'],clicks:1,impressions:100,ctr:.01,position:9}]})};
      if(dims[0]==='page'){
        const previous=requestBody.endDate<'2026-09-01';
@@ -74,6 +78,9 @@ test('Search Console sync uses discovered properties, date ranges and returns da
  await assert.rejects(f.call('search-console/sync',{data:{property:'https://evil.test/',period:'28d'}}),{status:400});
  const result=await f.call('search-console/sync',{data:{property:'sc-domain:rohitveterinary.com',period:'28d'}});
  assert.equal(result.status,200);assert.equal(result.data.metrics.clicks,30);assert.equal(result.data.queries[0].query,'vet clinic lohardaga');assert.equal(result.data.opportunities.highImpressionLowCtr.length,1);assert.equal(result.data.opportunities.positionOpportunities.length,1);
+ assert.equal(result.data.queryPages[0].query,'anronil bolus');assert.equal(result.data.queryPages[0].subdomain,'RVH Vet Mart');assert.equal(result.data.opportunities.queryLandingOpportunities[0].page,'https://mart.rohitveterinary.com/');assert.match(result.data.opportunities.queryLandingOpportunities[0].recommendation,/landing on a broad page/i);
+ const task=await f.call('optimizer/search-console-task',{data:{reportId:result.data.id,index:0}});assert.equal(task.status,201);assert.equal(task.data.task.url,'https://mart.rohitveterinary.com/');assert.equal(task.data.task.kind,'Search Console');
+ const duplicate=await f.call('optimizer/search-console-task',{data:{reportId:result.data.id,index:0}});assert.equal(duplicate.status,200);assert.equal(duplicate.data.created,false);
  assert.ok(!JSON.stringify(result.data).includes('refresh1'));assert.equal(f.api.state().reports.length,1);
  const performance=await f.call('search-console/performance?property=sc-domain%3Arohitveterinary.com&period=28d',{method:'GET',url:'/api/search-console/performance?property=sc-domain%3Arohitveterinary.com&period=28d'});
  assert.equal(performance.data.report.metrics.impressions,500);

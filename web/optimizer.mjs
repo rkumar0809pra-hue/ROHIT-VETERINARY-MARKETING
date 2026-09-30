@@ -73,6 +73,33 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
     return {days,startDate:iso(start),endDate:iso(end),previousStartDate:iso(previousStart),previousEndDate:iso(previousEnd)};
   };
   const normalizeRows=(rows,label)=>rows.map(row=>{const m=metric(row);if(!validMetric(m))throw googleError('Google returned invalid Search Console metrics.');const key=Array.isArray(row.keys)?String(row.keys[0]||''):'';return {[label]:key,...m};});
+  const landingSource=page=>{
+    try {
+      const host=new URL(page).hostname.toLowerCase();
+      if(host==='mart.rohitveterinary.com')return 'RVH Vet Mart';
+      if(host==='app.rohitveterinary.com')return 'Clinic app';
+      if(host==='marketing.rohitveterinary.com')return 'Marketing Studio';
+      if(host==='rohitveterinary.com'||host==='www.rohitveterinary.com')return 'Clinic website';
+      return host;
+    } catch { return 'Unknown'; }
+  };
+  const landingRecommendation=row=>{
+    let page;try{page=new URL(row.page);}catch{return 'Review the landing page and make sure it clearly matches this search query.';}
+    const priceIntent=/\b(price|cost|mrp|rate)\b/i.test(row.query);
+    const broadPage=page.pathname==='/'||page.pathname==='';
+    if(broadPage)return priceIntent
+      ? 'Price-intent search is landing on a broad page. If a dedicated public product page exists, make it indexable and ensure its visible price, title and description match the query.'
+      : 'This search is landing on a broad page. If a dedicated public page for this product or service exists, make it indexable and ensure its title, heading and visible content clearly match the query.';
+    if(row.ctr<0.02&&row.position<=10)return 'Google is already showing this page prominently, but clicks are low. Review the title, meta description and visible page heading so they match the query without overstating the product.';
+    if(row.position>10&&row.position<=20)return 'Strengthen this landing page for the exact query with a clear heading, useful product or service details, internal links and indexable content.';
+    return 'Review query-to-page relevance and improve the page only where the visible content supports the search intent.';
+  };
+  const normalizeQueryPages=rows=>rows.map(row=>{
+    const m=metric(row);if(!validMetric(m))throw googleError('Google returned invalid Search Console metrics.');
+    const keys=Array.isArray(row.keys)?row.keys:[],query=String(keys[0]||''),page=String(keys[1]||'');
+    const out={query,page,subdomain:landingSource(page),...m};
+    return {...out,recommendation:landingRecommendation(out)};
+  }).filter(x=>x.query&&x.page);
   async function refreshProperties() {
     const token=await accessToken(),sites=await listSites(token),g=readGoogle();
     if(!g)throw fail(409,'Connect Google Search Console first.');
@@ -134,20 +161,22 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
         const d=await body(req),period=typeof d.period==='string'?d.period:'28d',range=dateRange(period),token=await accessToken(),sites=await listSites(token);
         if(typeof d.property!=='string'||!sites.some(x=>x.siteUrl===d.property))throw fail(400,'Choose a Search Console property available to the connected Google account.');
         const base={startDate:range.startDate,endDate:range.endDate,dataState:'final',type:'web'};
-        const [totalsRows,trendRows,queryRows,pageRows,previousPageRows]=await Promise.all([
+        const [totalsRows,trendRows,queryRows,pageRows,previousPageRows,queryPageRows]=await Promise.all([
           query(token,d.property,{...base,rowLimit:1}),
           query(token,d.property,{...base,dimensions:['date'],rowLimit:25000}),
           query(token,d.property,{...base,dimensions:['query'],rowLimit:100}),
           query(token,d.property,{...base,dimensions:['page'],rowLimit:100}),
           query(token,d.property,{...base,startDate:range.previousStartDate,endDate:range.previousEndDate,dimensions:['page'],rowLimit:100}),
+          query(token,d.property,{...base,dimensions:['query','page'],rowLimit:1000}),
         ]);
         const totals=totalsRows[0]?metric(totalsRows[0]):null;if(totals&&!validMetric(totals))throw googleError('Google returned invalid Search Console metrics.');
-        const trend=normalizeRows(trendRows,'date'),queries=normalizeRows(queryRows,'query'),pages=normalizeRows(pageRows,'page'),previousPages=normalizeRows(previousPageRows,'page');
+        const trend=normalizeRows(trendRows,'date'),queries=normalizeRows(queryRows,'query'),pages=normalizeRows(pageRows,'page'),previousPages=normalizeRows(previousPageRows,'page'),queryPages=normalizeQueryPages(queryPageRows);
         const previousMap=new Map(previousPages.map(x=>[x.page,x.clicks]));
         const decliningPages=pages.map(x=>({...x,previousClicks:previousMap.get(x.page)||0,clickChange:x.clicks-(previousMap.get(x.page)||0)})).filter(x=>x.previousClicks>0&&x.clickChange<0).sort((a,b)=>a.clickChange-b.clickChange).slice(0,10);
         const highImpressionLowCtr=queries.filter(x=>x.impressions>=10&&x.ctr<0.03).sort((a,b)=>b.impressions-a.impressions).slice(0,10);
         const positionOpportunities=queries.filter(x=>x.position>=4&&x.position<=20).sort((a,b)=>b.impressions-a.impressions).slice(0,10);
-        const report={id:randomUUID(),property:d.property,period,startDate:range.startDate,endDate:range.endDate,receivedAt:new Date().toISOString(),metrics:totals,trend,queries,pages,opportunities:{highImpressionLowCtr,decliningPages,positionOpportunities}};
+        const queryLandingOpportunities=queryPages.filter(x=>(x.impressions>=10&&x.ctr<0.03)||(x.position>=4&&x.position<=20)).sort((a,b)=>b.impressions-a.impressions||a.position-b.position).slice(0,30);
+        const report={id:randomUUID(),property:d.property,period,startDate:range.startDate,endDate:range.endDate,receivedAt:new Date().toISOString(),metrics:totals,trend,queries,pages,queryPages,opportunities:{highImpressionLowCtr,decliningPages,positionOpportunities,queryLandingOpportunities}};
         db.prepare('INSERT INTO optimizer_reports VALUES(?,?)').run(report.id,JSON.stringify(report));db.exec('DELETE FROM optimizer_reports WHERE rowid NOT IN (SELECT rowid FROM optimizer_reports ORDER BY rowid DESC LIMIT 30)');
         const g=readGoogle();writeGoogle({...g,properties:sites,lastSyncAt:report.receivedAt,updatedAt:report.receivedAt});audit('search_console_report_imported');json(res,200,report);return true;
       }
@@ -155,6 +184,18 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
       if(path==='/api/search-console/performance'&&req.method==='GET'){
         const u=new URL(req.url,appOrigin()),property=u.searchParams.get('property'),period=u.searchParams.get('period');
         const report=reports().find(r=>(!property||r.property===property)&&(!period||r.period===period))||null;json(res,200,{report});return true;
+      }
+
+      if(path==='/api/optimizer/search-console-task'&&req.method==='POST'){
+        const d=await body(req);
+        if(typeof d.reportId!=='string'||!Number.isInteger(d.index)||d.index<0||d.index>29)throw fail(400,'Choose a valid Search Console opportunity.');
+        const report=reports().find(r=>r.id===d.reportId),row=report?.opportunities?.queryLandingOpportunities?.[d.index];
+        if(!report||!row)throw fail(404,'Search Console opportunity not found. Refresh the report and try again.');
+        const key=`gsc|${report.property}|${row.query}|${row.page}`,existing=tasks().find(t=>t.key===key);
+        if(existing){json(res,200,{created:false,task:existing});return true;}
+        const priority=row.impressions>=50||row.position<=10?'High':'Medium';
+        const t={id:randomUUID(),key,kind:'Search Console',title:`Optimize query: ${row.query}`,url:row.page,evidence:`${row.impressions} impressions · ${row.clicks} clicks · ${(row.ctr*100).toFixed(2)}% CTR · average position ${row.position.toFixed(1)} · ${row.subdomain}`,recommendation:row.recommendation,priority,status:'review',createdAt:new Date().toISOString(),history:[],searchConsole:{reportId:report.id,property:report.property,query:row.query,page:row.page}};
+        save(t);audit('search_console_task_created',t.id);json(res,201,{created:true,task:t});return true;
       }
 
       if(path==='/api/optimizer/prepare'&&req.method==='POST'){
