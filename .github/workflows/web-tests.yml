@@ -17,3 +17,4 @@ jobs:
       - run: npm test
         working-directory: web
       - run: node --check web/public/app.js
+      - run: node --check web/public/discoverability-ui.js
