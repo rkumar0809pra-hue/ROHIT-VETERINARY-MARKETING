@@ -87,7 +87,9 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
     let page;try{page=new URL(row.page);}catch{return 'Review the landing page and make sure it clearly matches this search query.';}
     const priceIntent=/\b(price|cost|mrp|rate)\b/i.test(row.query);
     const broadPage=page.pathname==='/'||page.pathname==='';
-    if(priceIntent&&broadPage)return 'Price-intent search is landing on a broad page. If a dedicated public product page exists, make it indexable and ensure its visible price, title and description match the query.';
+    if(broadPage)return priceIntent
+      ? 'Price-intent search is landing on a broad page. If a dedicated public product page exists, make it indexable and ensure its visible price, title and description match the query.'
+      : 'This search is landing on a broad page. If a dedicated public page for this product or service exists, make it indexable and ensure its title, heading and visible content clearly match the query.';
     if(row.ctr<0.02&&row.position<=10)return 'Google is already showing this page prominently, but clicks are low. Review the title, meta description and visible page heading so they match the query without overstating the product.';
     if(row.position>10&&row.position<=20)return 'Strengthen this landing page for the exact query with a clear heading, useful product or service details, internal links and indexable content.';
     return 'Review query-to-page relevance and improve the page only where the visible content supports the search intent.';
