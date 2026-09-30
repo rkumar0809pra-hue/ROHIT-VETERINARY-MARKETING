@@ -134,6 +134,12 @@ export function createApp({ env = process.env, generateImpl = generate, provider
       if(await appConnections.machineRoute(req,res,path))return;
       if (req.method !== "GET" && req.headers.origin !== origin)
         throw fail(403, "Request origin not allowed.");
+      // Google returns from a cross-site OAuth redirect, so the Strict session cookie
+      // may not be sent. The one-time state stored by the owner-started flow protects
+      // this callback; only this exact GET route is allowed before session validation.
+      if (path === "/api/auth/google/callback" && req.method === "GET") {
+        if(await studio.route(req,res,path,"owner")) return;
+      }
       if (path === "/api/login" && req.method === "POST") {
         if (Date.now() - loginWindow.start > 60000)
           loginWindow = { start: Date.now(), count: 0 };

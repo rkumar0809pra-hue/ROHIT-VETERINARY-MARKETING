@@ -67,6 +67,18 @@ test("authentication, origin checking and logout", async (t) => {
   await f.request("logout", "POST", {});
   assert.equal((await f.request("state")).status, 401);
 });
+
+test("Google OAuth callback is state-protected and does not depend on the Strict login cookie", async (t) => {
+  const f = await fixture(t, { env: {
+    GOOGLE_CLIENT_ID: "client",
+    GOOGLE_CLIENT_SECRET: "secret",
+    GOOGLE_REDIRECT_URI: "http://localhost:3000/api/auth/google/callback",
+  }});
+  const response = await f.request("auth/google/callback?state=bad&code=12345678901");
+  assert.equal(response.status, 400);
+  assert.match(response.data.error, /OAuth callback/i);
+});
+
 test("approval gates, date validation, stale updates and edits invalidate approval", async (t) => {
   const f = await fixture(t);
   await f.login();
