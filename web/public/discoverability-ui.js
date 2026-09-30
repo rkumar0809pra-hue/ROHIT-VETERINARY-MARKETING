@@ -20,7 +20,9 @@ export function discoverPage(c){
 export function discoverabilityChange(e){if(e.target.id.startsWith('discover-')){const k=e.target.id.slice(9);if(k in values)values[k]=e.target.value;}}
 async function work(c,fn){if(working)return;working=true;c.render();try{await fn();await c.refresh();}finally{working=false;c.render();}}
 export async function discoverabilityClick(el,c){
- if(el.hasAttribute('data-gsc-connect')){location.href='/api/auth/google';return true;}\n if(el.hasAttribute('data-gsc-disconnect')){if(confirm('Disconnect Google Search Console from this Marketing Studio?'))await work(c,async()=>{await c.api('search-console/disconnect','POST',{});c.notice('Google Search Console disconnected.');});return true;}\n if(el.hasAttribute('data-optimizer-prepare')){await work(c,async()=>{const r=await c.api('optimizer/prepare','POST',{});tab='tasks';c.notice(r.added+' improvements prepared from saved scans.');});return true;}
+ if(el.hasAttribute('data-gsc-connect')){location.href='/api/auth/google';return true;}
+ if(el.hasAttribute('data-gsc-disconnect')){if(confirm('Disconnect Google Search Console from this Marketing Studio?'))await work(c,async()=>{await c.api('search-console/disconnect','POST',{});c.notice('Google Search Console disconnected.');});return true;}
+ if(el.hasAttribute('data-optimizer-prepare')){await work(c,async()=>{const r=await c.api('optimizer/prepare','POST',{});tab='tasks';c.notice(r.added+' improvements prepared from saved scans.');});return true;}
  if(el.dataset.optimizerStatus){const note=el.dataset.optimizerStatus==='completed'?prompt('Describe the change and how you verified it:'):'';if(note===null)return true;await work(c,()=>c.api('optimizer/tasks/'+el.dataset.id,'PATCH',{status:el.dataset.optimizerStatus,note}));return true;}
  if(el.dataset.discoverTab){tab=el.dataset.discoverTab;c.render();return true;}
  if(el.dataset.scanHost){values.url='https://'+el.dataset.scanHost+'/';c.render();return true;}
