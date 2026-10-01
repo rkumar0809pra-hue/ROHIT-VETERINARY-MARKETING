@@ -41,8 +41,12 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   const s = (await f.req("state")).data;
   assert.deepEqual(s.seo, { domains: [], brand: "", checklist: {}, keywords: [], scans: [] });
   assert.deepEqual(s.aio, { checklist: {}, queries: [] });
+  assert.deepEqual(s.geo, { checklist: {} });
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
+  assert.equal(s.geoChecklist.length, 7);
+  assert.equal(s.visibility.manual.geo.total, 7);
+  assert.match(s.visibility.note, /not Google/i);
   assert.equal((await f.req("seo/checklist", "PATCH", { key: "not-a-real-key" })).status, 400);
 });
 
@@ -68,9 +72,13 @@ test("checklist toggles persist and compute independently for SEO and AIO", asyn
   assert.equal(r.data.checklist.titles, false);
   r = await f.req("aio/checklist", "PATCH", { key: "qa" });
   assert.equal(r.data.checklist.qa, true);
+  r = await f.req("geo/checklist", "PATCH", { key: "entity" });
+  assert.equal(r.data.checklist.entity, true);
   const s = (await f.req("state")).data;
   assert.equal(s.seo.checklist.titles, false);
   assert.equal(s.aio.checklist.qa, true);
+  assert.equal(s.geo.checklist.entity, true);
+  assert.equal(s.visibility.manual.geo.passed, 1);
 });
 
 test("keyword add/delete and check requires a configured domain and AI setup", async (t) => {
