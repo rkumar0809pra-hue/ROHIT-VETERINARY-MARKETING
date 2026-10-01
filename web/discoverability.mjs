@@ -22,6 +22,16 @@ export const AIO_CHECKLIST = [
   ['mentions', 'Consistent brand mentions across directories and forums'],
 ];
 
+export const GEO_CHECKLIST = [
+  ['entity', 'Clinic and Vet Mart names, location, phone and service facts are consistent across public pages'],
+  ['schema', 'Structured data identifies the clinic, products and breadcrumbs and matches visible content'],
+  ['sources', 'Important medical or technical claims link to authoritative sources where appropriate'],
+  ['authors', 'Public educational content clearly identifies the responsible clinic or author'],
+  ['freshness', 'Important service, product and contact facts show current information and are reviewed regularly'],
+  ['internal', 'Service and product pages are connected with descriptive internal links'],
+  ['crawlable', 'Key answers and product facts are present in crawlable HTML, not only inside private or interactive screens'],
+];
+
 // Web-search research is evidence gathering, not Google rank measurement
 // or a test of how another AI product answers a question.
 // Injectable so tests never make a billable request.
@@ -60,14 +70,18 @@ export async function checkOnline({ key, model, prompt, fetchImpl = fetch }) {
 
 export function createDiscoverability({ db, env, audit, json, body, requiredText, fail, quota, profile, generateImpl, scanImpl = scanWebsite, checkImpl = checkOnline }) {
   db.exec(`CREATE TABLE IF NOT EXISTS seo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
-    CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
+    CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
 
   const defaultSeo = () => ({ domains: [], brand: '', checklist: {}, keywords: [], scans: [] });
   const defaultAio = () => ({ checklist: {}, queries: [] });
+  const defaultGeo = () => ({ checklist: {} });
   const readSeo = () => ({ ...defaultSeo(), ...JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data || '{}') });
   const writeSeo = (d) => db.prepare('INSERT OR REPLACE INTO seo VALUES(1,?)').run(JSON.stringify(d));
   const readAio = () => ({ ...defaultAio(), ...JSON.parse(db.prepare('SELECT data FROM aio WHERE id=1').get()?.data || '{}') });
   const writeAio = (d) => db.prepare('INSERT OR REPLACE INTO aio VALUES(1,?)').run(JSON.stringify(d));
+  const readGeo = () => ({ ...defaultGeo(), ...JSON.parse(db.prepare('SELECT data FROM geo WHERE id=1').get()?.data || '{}') });
+  const writeGeo = (d) => db.prepare('INSERT OR REPLACE INTO geo VALUES(1,?)').run(JSON.stringify(d));
 
   async function check(prompt) {
     if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL)
@@ -80,8 +94,41 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   }
 
   const optimizer=createOptimizer({db,env,audit,json,body,fail});
+  const automaticGroups = {
+    seo: new Set(['Page response','Page title','Search description','Canonical link','Indexing directive','Image alt attributes']),
+    aeo: new Set(['Main heading','Readable page content','Structured data','Phone in page text']),
+    geo: new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
+  };
+  const readiness = () => {
+    const seo=readSeo(),aio=readAio(),geo=readGeo(),optimizerState=optimizer.state();
+    const latestByHost=new Map();
+    for(const scan of seo.scans||[]){
+      let host=scan.url;
+      try{host=new URL(scan.url).hostname;}catch{}
+      if(!latestByHost.has(host))latestByHost.set(host,scan);
+    }
+    const scans=[...latestByHost.values()];
+    const auto={};
+    for(const [kind,labels] of Object.entries(automaticGroups)){
+      const checks=scans.flatMap(scan=>(scan.checks||[]).filter(c=>labels.has(c.label)));
+      auto[kind]={passed:checks.filter(c=>c.passed).length,total:checks.length};
+    }
+    const manual=(items,state)=>({passed:items.filter(([key])=>Boolean(state.checklist?.[key])).length,total:items.length});
+    const latestReport=optimizerState.reports?.[0]||null;
+    return {
+      pagesScanned:scans.length,
+      automated:auto,
+      manual:{seo:manual(SEO_CHECKLIST,seo),aeo:manual(AIO_CHECKLIST,aio),geo:manual(GEO_CHECKLIST,geo)},
+      searchConsole:{
+        connected:Boolean(optimizerState.searchConsole?.connected),
+        latestReportAt:latestReport?.receivedAt||null,
+        opportunities:latestReport?.opportunities?.queryLandingOpportunities?.length||0,
+      },
+      note:'These are RVH internal readiness checks. They are not Google, ChatGPT, Gemini or AI Overview scores and do not predict ranking or citation.',
+    };
+  };
   return {
-    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, scanHosts: SCAN_HOSTS }),
     async route(req, res, path, role) {
       if(await optimizer.route(req,res,path,role))return true;
       const owner = () => { if (role !== 'owner') throw fail(403, 'Only the owner can change this setting.'); };
@@ -95,10 +142,15 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       }
       if(path === '/api/discover/draft' && req.method === 'POST') {
         owner(); const data=await body(req);const topic=requiredText(data.topic,1000);
-        if(!['seo','aio'].includes(data.kind))throw fail(400,'Choose SEO or AIO.');
+        if(!['seo','aio','geo'].includes(data.kind))throw fail(400,'Choose SEO, AEO or GEO.');
         if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure the OpenAI key and model first.');
         quota('website drafts',20);
-        const brief=`Create a ${data.kind==='seo'?'public website page draft with an SEO title, description, H1 and service introduction':'clear question-and-answer website draft for AI discoverability'} about: ${topic}. Use Hindi with an English title suggestion. Use only confirmed clinic profile facts. Do not invent opening hours, prices, credentials, availability, testimonials or medical treatment instructions. Mark missing facts for owner review. Do not promise search rankings or AI citations. This is a draft, not an instruction to modify a live website.`;
+        const mode=data.kind==='seo'
+          ? 'public website page draft with an SEO title, description, H1 and service introduction'
+          : data.kind==='geo'
+            ? 'AI-readable public page draft with a concise entity summary, direct factual answers, source placeholders for technical claims, clear internal-link suggestions and structured-data notes'
+            : 'clear question-and-answer website draft for answer-engine discoverability';
+        const brief=`Create a ${mode} about: ${topic}. Use Hindi with an English title suggestion. Use only confirmed clinic profile facts. Do not invent opening hours, prices, credentials, availability, testimonials or medical treatment instructions. Mark missing facts for owner review. Do not promise search rankings or AI citations. This is a draft, not an instruction to modify a live website.`;
         let content;try {content=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,agent:{id:'content',name:'Website content writer',instruction:'Write accurate public website drafts using only confirmed clinic facts.'},language:'Hindi',brief,metrics:{},profile:profile()});}catch{throw fail(502,'Website draft could not be generated. Check AI configuration and try later.');}
         if(typeof content!=='string'||!content.trim())throw fail(502,'No draft was returned.');
         const id=randomUUID();db.prepare("INSERT INTO drafts(id,title,agent,language,brief,content,created_at,meta_json) VALUES(?,?,'content','Hindi',?,?,?,?)").run(id,topic.slice(0,160),brief,content.slice(0,20000),new Date().toISOString(),JSON.stringify({platform:'Website',kind:data.kind}));
@@ -176,6 +228,16 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         aio.checklist[data.key] = !aio.checklist[data.key];
         writeAio(aio);
         json(res, 200, aio);
+        return true;
+      }
+
+      if (path === '/api/geo/checklist' && req.method === 'PATCH') {
+        const data = await body(req);
+        if (!GEO_CHECKLIST.some(([k]) => k === data.key)) throw fail(400, 'Unknown checklist item.');
+        const geo = readGeo();
+        geo.checklist[data.key] = !geo.checklist[data.key];
+        writeGeo(geo);
+        json(res, 200, geo);
         return true;
       }
       if (path === '/api/aio/queries' && req.method === 'POST') {
