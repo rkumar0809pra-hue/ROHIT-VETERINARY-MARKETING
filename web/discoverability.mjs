@@ -215,7 +215,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         const products=urls.map(url=>{
           const old=previous.get(url)||{},slug=decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||''),priority=productSearchPriority(url,report);
           return {url,slug,status:old.status||'pending',checkedAt:old.checkedAt||null,readiness:old.readiness||null,failures:old.failures||[],error:old.error||null,...priority};
-        }).sort((a,b)=>({High:0,Medium:1,Standard:2}[a.priority]-({High:0,Medium:1,Standard:2}[b.priority])||a.slug.localeCompare(b.slug));
+        }).sort((a,b)=>({High:0,Medium:1,Standard:2}[a.priority]-{High:0,Medium:1,Standard:2}[b.priority])||a.slug.localeCompare(b.slug));
         writeBulk({sitemapUrl:PRODUCT_SITEMAP_URL,refreshedAt:new Date().toISOString(),products});
         audit('bulk_product_sitemap_loaded');json(res,200,bulkState());return true;
       }
