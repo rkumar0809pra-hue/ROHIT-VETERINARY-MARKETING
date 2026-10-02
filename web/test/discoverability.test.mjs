@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../server.mjs";
+import { parseProductSitemap, classifyBulkScan, productSearchPriority } from "../discoverability.mjs";
 
 const password = "owner-test-password-long";
 
@@ -35,6 +36,51 @@ async function fixture(t, options = {}) {
   return { req, login, base };
 }
 
+test("bulk product sitemap parser keeps only canonical Vet Mart product URLs", () => {
+  const xml=`<urlset>
+    <url><loc>https://mart.rohitveterinary.com/product/anronil-bolus</loc></url>
+    <url><loc>https://mart.rohitveterinary.com/product/mastina-ptm-bolus</loc></url>
+    <url><loc>https://mart.rohitveterinary.com/product/anronil-bolus</loc></url>
+    <url><loc>https://app.rohitveterinary.com/product/not-mart</loc></url>
+    <url><loc>https://mart.rohitveterinary.com/catalog</loc></url>
+  </urlset>`;
+  assert.deepEqual(parseProductSitemap(xml),[
+    "https://mart.rohitveterinary.com/product/anronil-bolus",
+    "https://mart.rohitveterinary.com/product/mastina-ptm-bolus",
+  ]);
+});
+
+test("bulk readiness separates SEO, AEO and GEO and preserves failures", () => {
+  const scan={checks:[
+    {label:"Page response",passed:true},{label:"Page title",passed:true},{label:"Search description",passed:true},
+    {label:"Canonical link",passed:true},{label:"Indexing directive",passed:true},{label:"Image alt attributes",passed:true},
+    {label:"Main heading",passed:true},{label:"Readable page content",passed:false,observed:"120 characters",action:"Add useful crawlable text"},
+    {label:"Structured data",passed:true},{label:"Phone in page text",passed:true},
+  ]};
+  const result=classifyBulkScan(scan);
+  assert.equal(result.readiness.seo.ready,true);
+  assert.equal(result.readiness.aeo.ready,false);
+  assert.equal(result.readiness.geo.ready,false);
+  assert.deepEqual(result.failures.map(x=>x.label),["Readable page content"]);
+});
+
+test("Search Console product priority distinguishes exact and query-name matches", () => {
+  const report={queryPages:[
+    {query:"mastina ptm bolus price",page:"https://mart.rohitveterinary.com/catalog?problem=mastitis",impressions:96,clicks:1,ctr:.0104,position:7.1},
+    {query:"anronil bolus",page:"https://mart.rohitveterinary.com/product/anronil-bolus",impressions:12,clicks:1,ctr:.08,position:6},
+  ]};
+  const mastina=productSearchPriority("https://mart.rohitveterinary.com/product/mastina-ptm-bolus",report);
+  assert.equal(mastina.priority,"High");
+  assert.equal(mastina.gsc.matchType,"query-slug");
+  assert.equal(mastina.gsc.impressions,96);
+  const anronil=productSearchPriority("https://mart.rohitveterinary.com/product/anronil-bolus",report);
+  assert.equal(anronil.gsc.matchType,"exact-page");
+  assert.equal(anronil.priority,"High");
+  const unknown=productSearchPriority("https://mart.rohitveterinary.com/product/unknown-product",report);
+  assert.equal(unknown.priority,"Standard");
+  assert.equal(unknown.gsc,null);
+});
+
 test("SEO/AIO state defaults and checklist item validation", async (t) => {
   const f = await fixture(t);
   await f.login();
@@ -42,6 +88,8 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   assert.deepEqual(s.seo, { domains: [], brand: "", checklist: {}, keywords: [], scans: [] });
   assert.deepEqual(s.aio, { checklist: {}, queries: [] });
   assert.deepEqual(s.geo, { checklist: {} });
+  assert.equal(s.bulkProductAudit.summary.total, 0);
+  assert.equal(s.bulkProductAudit.sitemapUrl, "https://app.rohitveterinary.com/api/store/sitemap.xml");
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
   assert.equal(s.geoChecklist.length, 7);
