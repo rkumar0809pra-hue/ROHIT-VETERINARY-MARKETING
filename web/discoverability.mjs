@@ -1,6 +1,6 @@
 import { createOptimizer } from './optimizer.mjs';
 import { randomUUID } from 'node:crypto';
-import { scanWebsite, SCAN_HOSTS } from './website-scan.mjs';
+import { scanWebsite, readPublicPage, SCAN_HOSTS } from './website-scan.mjs';
 
 export const SEO_CHECKLIST = [
   ['titles', 'Unique, keyword-led title tags on every page'],
@@ -31,6 +31,61 @@ export const GEO_CHECKLIST = [
   ['internal', 'Service and product pages are connected with descriptive internal links'],
   ['crawlable', 'Key answers and product facts are present in crawlable HTML, not only inside private or interactive screens'],
 ];
+
+export const PRODUCT_SITEMAP_URL = 'https://app.rohitveterinary.com/api/store/sitemap.xml';
+
+const xmlText = (value) => String(value || '')
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+
+export function parseProductSitemap(xml) {
+  const urls=[];
+  for(const match of String(xml||'').matchAll(/<loc>\s*([\s\S]*?)\s*<\/loc>/gi)){
+    try {
+      const u=new URL(xmlText(match[1]));
+      if(u.protocol!=='https:'||u.hostname!=='mart.rohitveterinary.com'||!/^\/product\/[^/]+\/?$/.test(u.pathname))continue;
+      u.search='';u.hash='';
+      urls.push(u.origin+u.pathname.replace(/\/$/,''));
+    } catch {}
+  }
+  return [...new Set(urls)].slice(0,5000);
+}
+
+const BULK_GROUPS = {
+  seo:new Set(['Page response','Page title','Search description','Canonical link','Indexing directive','Image alt attributes']),
+  aeo:new Set(['Main heading','Readable page content','Structured data','Phone in page text']),
+  geo:new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
+};
+
+export function classifyBulkScan(scan) {
+  const readiness={};
+  for(const [key,labels] of Object.entries(BULK_GROUPS)){
+    const checks=(scan?.checks||[]).filter(c=>labels.has(c.label));
+    readiness[key]={passed:checks.filter(c=>c.passed).length,total:checks.length,ready:checks.length>0&&checks.every(c=>c.passed)};
+  }
+  const failures=(scan?.checks||[]).filter(c=>!c.passed).map(c=>({label:c.label,observed:c.observed,action:c.action}));
+  return {readiness,failures};
+}
+
+const GENERIC_QUERY_WORDS=new Set(['price','cost','mrp','rate','buy','online','uses','use','used','for','veterinary','vet','medicine','medicines','bolus','tablet','tablets','injection','inj','syrup','tube','ml','gm','g']);
+const words=value=>String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean);
+export function productSearchPriority(url,report) {
+  const slug=decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||'').toLowerCase();
+  const slugWords=new Set(words(slug));
+  const rows=Array.isArray(report?.queryPages)?report.queryPages:[];
+  const exact=rows.filter(r=>r.page===url).sort((a,b)=>b.impressions-a.impressions)[0];
+  let match=exact||null,matchType=exact?'exact-page':null;
+  if(!match){
+    const candidates=rows.filter(r=>{
+      const core=words(r.query).filter(w=>!GENERIC_QUERY_WORDS.has(w));
+      return core.length>0&&core.every(w=>slugWords.has(w));
+    }).sort((a,b)=>b.impressions-a.impressions);
+    if(candidates[0]){match=candidates[0];matchType='query-slug';}
+  }
+  if(!match)return {priority:'Standard',gsc:null};
+  const impressions=Number(match.impressions||0),clicks=Number(match.clicks||0),ctr=Number(match.ctr||0),position=Number(match.position||0);
+  const priority=impressions>=20||(position>0&&position<=10)?'High':'Medium';
+  return {priority,gsc:{query:String(match.query||''),impressions,clicks,ctr,position,matchType}};
+}
 
 // Web-search research is evidence gathering, not Google rank measurement
 // or a test of how another AI product answers a question.
@@ -71,17 +126,33 @@ export async function checkOnline({ key, model, prompt, fetchImpl = fetch }) {
 export function createDiscoverability({ db, env, audit, json, body, requiredText, fail, quota, profile, generateImpl, scanImpl = scanWebsite, checkImpl = checkOnline }) {
   db.exec(`CREATE TABLE IF NOT EXISTS seo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
-    CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
+    CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE IF NOT EXISTS bulk_product_audit(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
 
   const defaultSeo = () => ({ domains: [], brand: '', checklist: {}, keywords: [], scans: [] });
   const defaultAio = () => ({ checklist: {}, queries: [] });
   const defaultGeo = () => ({ checklist: {} });
+  const defaultBulk = () => ({ sitemapUrl: PRODUCT_SITEMAP_URL, refreshedAt: null, products: [] });
   const readSeo = () => ({ ...defaultSeo(), ...JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data || '{}') });
   const writeSeo = (d) => db.prepare('INSERT OR REPLACE INTO seo VALUES(1,?)').run(JSON.stringify(d));
   const readAio = () => ({ ...defaultAio(), ...JSON.parse(db.prepare('SELECT data FROM aio WHERE id=1').get()?.data || '{}') });
   const writeAio = (d) => db.prepare('INSERT OR REPLACE INTO aio VALUES(1,?)').run(JSON.stringify(d));
   const readGeo = () => ({ ...defaultGeo(), ...JSON.parse(db.prepare('SELECT data FROM geo WHERE id=1').get()?.data || '{}') });
   const writeGeo = (d) => db.prepare('INSERT OR REPLACE INTO geo VALUES(1,?)').run(JSON.stringify(d));
+  const readBulk = () => ({ ...defaultBulk(), ...JSON.parse(db.prepare('SELECT data FROM bulk_product_audit WHERE id=1').get()?.data || '{}') });
+  const writeBulk = (d) => db.prepare('INSERT OR REPLACE INTO bulk_product_audit VALUES(1,?)').run(JSON.stringify(d));
+  const bulkState = () => {
+    const data=readBulk(),products=Array.isArray(data.products)?data.products:[];
+    const summary={
+      total:products.length,
+      ready:products.filter(p=>p.status==='done'&&p.failures?.length===0).length,
+      needsReview:products.filter(p=>p.status==='done'&&p.failures?.length>0).length,
+      pending:products.filter(p=>p.status==='pending').length,
+      failed:products.filter(p=>p.status==='failed').length,
+      highPriority:products.filter(p=>p.priority==='High').length,
+    };
+    return {...data,summary};
+  };
 
   async function check(prompt) {
     if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL)
@@ -128,10 +199,61 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     };
   };
   return {
-    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, scanHosts: SCAN_HOSTS }),
     async route(req, res, path, role) {
       if(await optimizer.route(req,res,path,role))return true;
       const owner = () => { if (role !== 'owner') throw fail(403, 'Only the owner can change this setting.'); };
+
+      if(path === '/api/discover/bulk-products/start' && req.method === 'POST') {
+        owner();quota('bulk product sitemap refresh',10);
+        let sitemap;try{sitemap=await readPublicPage(PRODUCT_SITEMAP_URL);}catch{throw fail(502,'Could not read the Vet Mart product sitemap. Try again after confirming the sitemap is live.');}
+        if(sitemap.status!==200)throw fail(502,'Vet Mart product sitemap did not return HTTP 200.');
+        const urls=parseProductSitemap(sitemap.text);
+        if(!urls.length)throw fail(502,'No Vet Mart product URLs were found in the sitemap.');
+        const previous=new Map(readBulk().products.map(p=>[p.url,p]));
+        const report=optimizer.state().reports?.[0]||null;
+        const products=urls.map(url=>{
+          const old=previous.get(url)||{},slug=decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||''),priority=productSearchPriority(url,report);
+          return {url,slug,status:old.status||'pending',checkedAt:old.checkedAt||null,readiness:old.readiness||null,failures:old.failures||[],error:old.error||null,...priority};
+        }).sort((a,b)=>({High:0,Medium:1,Standard:2}[a.priority]-{High:0,Medium:1,Standard:2}[b.priority])||a.slug.localeCompare(b.slug));
+        writeBulk({sitemapUrl:PRODUCT_SITEMAP_URL,refreshedAt:new Date().toISOString(),products});
+        audit('bulk_product_sitemap_loaded');json(res,200,bulkState());return true;
+      }
+      if(path === '/api/discover/bulk-products/run' && req.method === 'POST') {
+        owner();quota('bulk product audit batches',80);
+        const data=await body(req),limit=Math.min(20,Math.max(1,Number.isInteger(data.limit)?data.limit:10)),retryFailed=data.retryFailed===true;
+        const bulk=readBulk();
+        const candidates=bulk.products.filter(p=>p.status==='pending'||(retryFailed&&p.status==='failed')).slice(0,limit);
+        if(!candidates.length){json(res,200,{scanned:0,...bulkState().summary});return true;}
+        const concurrency=5;
+        for(let i=0;i<candidates.length;i+=concurrency){
+          const chunk=candidates.slice(i,i+concurrency);
+          const results=await Promise.allSettled(chunk.map(p=>scanImpl({url:p.url,profile:profile()})));
+          results.forEach((result,index)=>{
+            const product=bulk.products.find(p=>p.url===chunk[index].url);if(!product)return;
+            if(result.status==='fulfilled'){
+              const classified=classifyBulkScan(result.value);
+              Object.assign(product,{status:'done',checkedAt:new Date().toISOString(),readiness:classified.readiness,failures:classified.failures,error:null});
+            } else {
+              Object.assign(product,{status:'failed',checkedAt:new Date().toISOString(),error:'Could not scan this public product page.',readiness:null,failures:[]});
+            }
+          });
+          writeBulk(bulk);
+        }
+        audit('bulk_product_audit_batch');const state=bulkState();json(res,200,{scanned:candidates.length,...state.summary});return true;
+      }
+      if(path === '/api/discover/bulk-products/task' && req.method === 'POST') {
+        owner();const data=await body(req),url=requiredText(data.url,1000),product=readBulk().products.find(p=>p.url===url);
+        if(!product)throw fail(404,'Product is not in the current bulk audit.');
+        if(product.status!=='done'||!product.failures?.length)throw fail(400,'This product has no saved audit failures to turn into a task.');
+        const key='bulk-product|'+product.url,existing=db.prepare('SELECT data FROM optimizer_tasks').all().map(x=>JSON.parse(x.data)).find(t=>t.key===key);
+        if(existing){json(res,200,{created:false,task:existing});return true;}
+        const labels=product.failures.map(f=>f.label),priority=product.priority==='High'||labels.some(x=>['Page response','Page title','Indexing directive','Structured data'].includes(x))?'High':'Medium';
+        const r=product.readiness||{},g=product.gsc;
+        const evidence=`SEO ${r.seo?.passed||0}/${r.seo?.total||0} · AEO ${r.aeo?.passed||0}/${r.aeo?.total||0} · GEO ${r.geo?.passed||0}/${r.geo?.total||0}${g?` · matched Search Console query "${g.query}" (${g.impressions} impressions, position ${g.position.toFixed(1)})`:''}`;
+        const task={id:randomUUID(),key,kind:'Bulk SEO/AEO/GEO',title:`Review product: ${product.slug.replace(/-/g,' ')}`,url:product.url,evidence,recommendation:'Review these initial-HTML checks: '+labels.join(', ')+'. Change only what the visible product data supports.',priority,status:'review',createdAt:new Date().toISOString(),history:[]};
+        db.prepare('INSERT INTO optimizer_tasks VALUES(?,?)').run(task.id,JSON.stringify(task));audit('bulk_product_task_created',task.id);json(res,201,{created:true,task});return true;
+      }
 
       if(path === '/api/discover/scan' && req.method === 'POST') {
         owner(); const data=await body(req); const url=requiredText(data.url,1000);
