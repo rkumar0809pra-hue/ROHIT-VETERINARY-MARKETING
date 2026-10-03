@@ -50,6 +50,15 @@ export function parseProductSitemap(xml) {
   return [...new Set(urls)].slice(0,5000);
 }
 
+export function compareProductSitemapSnapshots(previousProducts, urls, detectedAt = new Date().toISOString(), baselineRefreshedAt = null) {
+  const previous=Array.isArray(previousProducts)?previousProducts:[],next=Array.isArray(urls)?urls:[];
+  const previousUrls=new Set(previous.map(p=>typeof p==='string'?p:p?.url).filter(Boolean)),nextUrls=new Set(next);
+  const added=next.filter(url=>!previousUrls.has(url)),removed=[...previousUrls].filter(url=>!nextUrls.has(url));
+  return added.length||removed.length
+    ? {detectedAt,baselineRefreshedAt,added,removed}
+    : {detectedAt:null,baselineRefreshedAt,added:[],removed:[]};
+}
+
 const BULK_GROUPS = {
   seo:new Set(['Page response','Page title','Search description','Canonical link','Indexing directive','Image alt attributes']),
   aeo:new Set(['Main heading','Readable page content','Structured data','Phone in page text']),
@@ -218,17 +227,13 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         if(!urls.length)throw fail(502,'No Vet Mart product URLs were found in the sitemap.');
         const previousBulk=readBulk(),previousProducts=Array.isArray(previousBulk.products)?previousBulk.products:[];
         const previous=new Map(previousProducts.map(p=>[p.url,p]));
-        const previousUrls=new Set(previousProducts.map(p=>p.url)),nextUrls=new Set(urls);
-        const added=urls.filter(url=>!previousUrls.has(url)),removed=previousProducts.map(p=>p.url).filter(url=>!nextUrls.has(url));
         const report=optimizer.state().reports?.[0]||null;
         const products=urls.map(url=>{
           const old=previous.get(url)||{},slug=decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||''),priority=productSearchPriority(url,report);
           return {url,slug,status:old.status||'pending',checkedAt:old.checkedAt||null,readiness:old.readiness||null,failures:old.failures||[],error:old.error||null,...priority};
         }).sort((a,b)=>({High:0,Medium:1,Standard:2}[a.priority]-{High:0,Medium:1,Standard:2}[b.priority])||a.slug.localeCompare(b.slug));
         const refreshedAt=new Date().toISOString();
-        const drift=added.length||removed.length
-          ? {detectedAt:refreshedAt,baselineRefreshedAt:previousBulk.refreshedAt||null,added,removed}
-          : {detectedAt:null,baselineRefreshedAt:previousBulk.refreshedAt||null,added:[],removed:[]};
+        const drift=compareProductSitemapSnapshots(previousProducts,urls,refreshedAt,previousBulk.refreshedAt||null);
         writeBulk({sitemapUrl:PRODUCT_SITEMAP_URL,refreshedAt,products,drift});
         audit('bulk_product_sitemap_loaded');json(res,200,bulkState());return true;
       }
