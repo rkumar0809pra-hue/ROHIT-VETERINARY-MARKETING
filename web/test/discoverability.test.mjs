@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../server.mjs";
-import { parseProductSitemap, classifyBulkScan, productSearchPriority } from "../discoverability.mjs";
+import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots } from "../discoverability.mjs";
 
 const password = "owner-test-password-long";
 
@@ -50,6 +50,25 @@ test("bulk product sitemap parser keeps only canonical Vet Mart product URLs", (
   ]);
 });
 
+test("catalogue drift compares the latest sitemap with the previous optimizer snapshot", () => {
+  const previous=[
+    {url:"https://mart.rohitveterinary.com/product/old-name"},
+    {url:"https://mart.rohitveterinary.com/product/stable-product"},
+  ];
+  const next=[
+    "https://mart.rohitveterinary.com/product/stable-product",
+    "https://mart.rohitveterinary.com/product/new-name",
+  ];
+  const drift=compareProductSitemapSnapshots(previous,next,"2026-10-03T10:00:00.000Z","2026-10-02T10:00:00.000Z");
+  assert.deepEqual(drift.added,["https://mart.rohitveterinary.com/product/new-name"]);
+  assert.deepEqual(drift.removed,["https://mart.rohitveterinary.com/product/old-name"]);
+  assert.equal(drift.detectedAt,"2026-10-03T10:00:00.000Z");
+  const stable=compareProductSitemapSnapshots(next,next,"2026-10-04T10:00:00.000Z","2026-10-03T10:00:00.000Z");
+  assert.equal(stable.detectedAt,null);
+  assert.deepEqual(stable.added,[]);
+  assert.deepEqual(stable.removed,[]);
+});
+
 test("bulk readiness separates SEO, AEO and GEO and preserves failures", () => {
   const scan={checks:[
     {label:"Page response",passed:true},{label:"Page title",passed:true},{label:"Search description",passed:true},
@@ -90,6 +109,9 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   assert.deepEqual(s.geo, { checklist: {} });
   assert.equal(s.bulkProductAudit.summary.total, 0);
   assert.equal(s.bulkProductAudit.sitemapUrl, "https://app.rohitveterinary.com/api/store/sitemap.xml");
+  assert.equal(s.bulkProductAudit.summary.driftAdded, 0);
+  assert.equal(s.bulkProductAudit.summary.driftRemoved, 0);
+  assert.equal(s.bulkProductAudit.summary.driftUnresolved, 0);
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
   assert.equal(s.geoChecklist.length, 7);
