@@ -132,7 +132,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const defaultSeo = () => ({ domains: [], brand: '', checklist: {}, keywords: [], scans: [] });
   const defaultAio = () => ({ checklist: {}, queries: [] });
   const defaultGeo = () => ({ checklist: {} });
-  const defaultBulk = () => ({ sitemapUrl: PRODUCT_SITEMAP_URL, refreshedAt: null, products: [] });
+  const defaultBulk = () => ({ sitemapUrl: PRODUCT_SITEMAP_URL, refreshedAt: null, products: [], drift: { detectedAt: null, baselineRefreshedAt: null, added: [], removed: [] } });
   const readSeo = () => ({ ...defaultSeo(), ...JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data || '{}') });
   const writeSeo = (d) => db.prepare('INSERT OR REPLACE INTO seo VALUES(1,?)').run(JSON.stringify(d));
   const readAio = () => ({ ...defaultAio(), ...JSON.parse(db.prepare('SELECT data FROM aio WHERE id=1').get()?.data || '{}') });
@@ -143,6 +143,9 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const writeBulk = (d) => db.prepare('INSERT OR REPLACE INTO bulk_product_audit VALUES(1,?)').run(JSON.stringify(d));
   const bulkState = () => {
     const data=readBulk(),products=Array.isArray(data.products)?data.products:[];
+    const drift=data.drift||{detectedAt:null,baselineRefreshedAt:null,added:[],removed:[]};
+    const addedSet=new Set(Array.isArray(drift.added)?drift.added:[]);
+    const unresolvedAdded=products.filter(p=>addedSet.has(p.url)&&(p.status!=='done'||p.failures?.length)).length;
     const summary={
       total:products.length,
       ready:products.filter(p=>p.status==='done'&&p.failures?.length===0).length,
@@ -150,8 +153,11 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       pending:products.filter(p=>p.status==='pending').length,
       failed:products.filter(p=>p.status==='failed').length,
       highPriority:products.filter(p=>p.priority==='High').length,
+      driftAdded:Array.isArray(drift.added)?drift.added.length:0,
+      driftRemoved:Array.isArray(drift.removed)?drift.removed.length:0,
+      driftUnresolved:unresolvedAdded,
     };
-    return {...data,summary};
+    return {...data,drift,summary};
   };
 
   async function check(prompt) {
@@ -210,13 +216,20 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         if(sitemap.status!==200)throw fail(502,'Vet Mart product sitemap did not return HTTP 200.');
         const urls=parseProductSitemap(sitemap.text);
         if(!urls.length)throw fail(502,'No Vet Mart product URLs were found in the sitemap.');
-        const previous=new Map(readBulk().products.map(p=>[p.url,p]));
+        const previousBulk=readBulk(),previousProducts=Array.isArray(previousBulk.products)?previousBulk.products:[];
+        const previous=new Map(previousProducts.map(p=>[p.url,p]));
+        const previousUrls=new Set(previousProducts.map(p=>p.url)),nextUrls=new Set(urls);
+        const added=urls.filter(url=>!previousUrls.has(url)),removed=previousProducts.map(p=>p.url).filter(url=>!nextUrls.has(url));
         const report=optimizer.state().reports?.[0]||null;
         const products=urls.map(url=>{
           const old=previous.get(url)||{},slug=decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||''),priority=productSearchPriority(url,report);
           return {url,slug,status:old.status||'pending',checkedAt:old.checkedAt||null,readiness:old.readiness||null,failures:old.failures||[],error:old.error||null,...priority};
         }).sort((a,b)=>({High:0,Medium:1,Standard:2}[a.priority]-{High:0,Medium:1,Standard:2}[b.priority])||a.slug.localeCompare(b.slug));
-        writeBulk({sitemapUrl:PRODUCT_SITEMAP_URL,refreshedAt:new Date().toISOString(),products});
+        const refreshedAt=new Date().toISOString();
+        const drift=added.length||removed.length
+          ? {detectedAt:refreshedAt,baselineRefreshedAt:previousBulk.refreshedAt||null,added,removed}
+          : {detectedAt:null,baselineRefreshedAt:previousBulk.refreshedAt||null,added:[],removed:[]};
+        writeBulk({sitemapUrl:PRODUCT_SITEMAP_URL,refreshedAt,products,drift});
         audit('bulk_product_sitemap_loaded');json(res,200,bulkState());return true;
       }
       if(path === '/api/discover/bulk-products/run' && req.method === 'POST') {
@@ -241,6 +254,29 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
           writeBulk(bulk);
         }
         audit('bulk_product_audit_batch');const state=bulkState();json(res,200,{scanned:candidates.length,...state.summary});return true;
+      }
+      if(path === '/api/discover/bulk-products/review' && req.method === 'POST') {
+        owner();quota('bulk product review re-audits',80);
+        const data=await body(req),limit=Math.min(20,Math.max(1,Number.isInteger(data.limit)?data.limit:10));
+        const bulk=readBulk();
+        const candidates=bulk.products.filter(p=>p.status==='done'&&p.failures?.length).slice(0,limit);
+        if(!candidates.length){json(res,200,{scanned:0,...bulkState().summary});return true;}
+        const concurrency=5;
+        for(let i=0;i<candidates.length;i+=concurrency){
+          const chunk=candidates.slice(i,i+concurrency);
+          const results=await Promise.allSettled(chunk.map(p=>scanImpl({url:p.url,profile:profile()})));
+          results.forEach((result,index)=>{
+            const product=bulk.products.find(p=>p.url===chunk[index].url);if(!product)return;
+            if(result.status==='fulfilled'){
+              const classified=classifyBulkScan(result.value);
+              Object.assign(product,{status:'done',checkedAt:new Date().toISOString(),readiness:classified.readiness,failures:classified.failures,error:null});
+            } else {
+              Object.assign(product,{status:'failed',checkedAt:new Date().toISOString(),error:'Could not re-audit this public product page.',readiness:null});
+            }
+          });
+          writeBulk(bulk);
+        }
+        audit('bulk_product_review_reaudit');const state=bulkState();json(res,200,{scanned:candidates.length,...state.summary});return true;
       }
       if(path === '/api/discover/bulk-products/task' && req.method === 'POST') {
         owner();const data=await body(req),url=requiredText(data.url,1000),product=readBulk().products.find(p=>p.url===url);
