@@ -262,7 +262,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       }
       if(path === '/api/discover/bulk-products/review' && req.method === 'POST') {
         owner();quota('bulk product review re-audits',80);
-        const data=await body(req),limit=Math.min(20,Math.max(1,Number.isInteger(data.limit)?data.limit:10));
+        const data=await body(req),limit=Math.min(30,Math.max(1,Number.isInteger(data.limit)?data.limit:30));
         const bulk=readBulk();
         const candidates=bulk.products.filter(p=>p.status==='done'&&p.failures?.length).slice(0,limit);
         if(!candidates.length){json(res,200,{scanned:0,...bulkState().summary});return true;}
