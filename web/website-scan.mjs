@@ -83,6 +83,6 @@ export function analysePage(page,profile) {
     );
   }
   const checks=rows.map(([label,passed,observed,action])=>({label,passed,observed,action}));
-  return {url:page.url,checkedAt:new Date().toISOString(),checks,limitations:'Single-page initial HTML check. SXO signals here cover crawlable page experience basics only; they do not measure rendered layout, Core Web Vitals, checkout completion, accessibility testing or Google ranking/indexing. Login pages may intentionally be private.'};
+  return {url:page.url,checkedAt:new Date().toISOString(),checks,limitations:'Single-page initial HTML check, not a rendered-browser audit. SXO signals here cover crawlable page experience basics only; they do not measure rendered layout, Core Web Vitals, checkout completion, accessibility testing or Google ranking/indexing. Login pages may intentionally be private.'};
 }
 export async function scanWebsite({url,profile,readImpl=readPublicPage}) { return analysePage(await readImpl(scanUrl(url).href),profile); }
