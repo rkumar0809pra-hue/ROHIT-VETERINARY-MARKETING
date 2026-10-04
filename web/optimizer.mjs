@@ -145,7 +145,43 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
     return sites;
   }
 
+  async function syncSearchConsole({property,period='28d'}={}) {
+    if(!googleConfig().valid)throw fail(503,'Google OAuth setup is incomplete on the server.');
+    if(!readGoogle()?.refreshToken)throw fail(409,'Connect Google Search Console first.');
+    const range=dateRange(period),token=await accessToken(),sites=await listSites(token);
+    if(typeof property!=='string'||!sites.some(x=>x.siteUrl===property))throw fail(400,'Choose a Search Console property available to the connected Google account.');
+    const base={startDate:range.startDate,endDate:range.endDate,dataState:'final',type:'web'};
+    const [totalsRows,trendRows,queryRows,pageRows,previousPageRows,queryPageRows]=await Promise.all([
+      query(token,property,{...base,rowLimit:1}),
+      query(token,property,{...base,dimensions:['date'],rowLimit:25000}),
+      query(token,property,{...base,dimensions:['query'],rowLimit:100}),
+      query(token,property,{...base,dimensions:['page'],rowLimit:100}),
+      query(token,property,{...base,startDate:range.previousStartDate,endDate:range.previousEndDate,dimensions:['page'],rowLimit:100}),
+      query(token,property,{...base,dimensions:['query','page'],rowLimit:1000}),
+    ]);
+    const totals=totalsRows[0]?metric(totalsRows[0]):null;if(totals&&!validMetric(totals))throw googleError('Google returned invalid Search Console metrics.');
+    const trend=normalizeRows(trendRows,'date'),queries=normalizeRows(queryRows,'query'),pages=normalizeRows(pageRows,'page'),previousPages=normalizeRows(previousPageRows,'page'),queryPages=normalizeQueryPages(queryPageRows);
+    const previousMap=new Map(previousPages.map(x=>[x.page,x.clicks]));
+    const decliningPages=pages.map(x=>({...x,previousClicks:previousMap.get(x.page)||0,clickChange:x.clicks-(previousMap.get(x.page)||0)})).filter(x=>x.previousClicks>0&&x.clickChange<0).sort((a,b)=>a.clickChange-b.clickChange).slice(0,10);
+    const highImpressionLowCtr=queries.filter(x=>x.impressions>=10&&x.ctr<0.03).sort((a,b)=>b.impressions-a.impressions).slice(0,10);
+    const positionOpportunities=queries.filter(x=>x.position>=4&&x.position<=20).sort((a,b)=>b.impressions-a.impressions).slice(0,10);
+    const queryLandingOpportunities=queryPages.filter(x=>(x.impressions>=10&&x.ctr<0.03)||(x.position>=4&&x.position<=20)).sort((a,b)=>b.impressions-a.impressions||a.position-b.position).slice(0,30);
+    const report={id:randomUUID(),property,period,startDate:range.startDate,endDate:range.endDate,receivedAt:new Date().toISOString(),metrics:totals,trend,queries,pages,queryPages,opportunities:{highImpressionLowCtr,decliningPages,positionOpportunities,queryLandingOpportunities}};
+    db.prepare('INSERT INTO optimizer_reports VALUES(?,?)').run(report.id,JSON.stringify(report));db.exec('DELETE FROM optimizer_reports WHERE rowid NOT IN (SELECT rowid FROM optimizer_reports ORDER BY rowid DESC LIMIT 30)');
+    const g=readGoogle();writeGoogle({...g,properties:sites,lastSyncAt:report.receivedAt,updatedAt:report.receivedAt});audit('search_console_report_imported');
+    return report;
+  }
+
+  async function syncMasterSearchConsole(period='28d') {
+    const current=publicSearchConsole();
+    if(!current.connected)return {skipped:'not-connected',report:null};
+    if(!current.masterProperty)return {skipped:'master-property-unavailable',report:null};
+    return {skipped:null,report:await syncSearchConsole({property:current.masterProperty,period})};
+  }
+
   return {
+    syncSearchConsole,
+    syncMasterSearchConsole,
     state:()=>({tasks:tasks(),reports:reports(),searchConsole:publicSearchConsole()}),
     async route(req,res,path,role){
       const optimizerPath=path.startsWith('/api/optimizer/');
@@ -194,29 +230,9 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
       }
 
       if((path==='/api/search-console/sync'||path==='/api/optimizer/search-console')&&req.method==='POST'){
-        if(!googleConfig().valid)throw fail(503,'Google OAuth setup is incomplete on the server.');
-        if(!readGoogle()?.refreshToken)throw fail(409,'Connect Google Search Console first.');
-        const d=await body(req),period=typeof d.period==='string'?d.period:'28d',range=dateRange(period),token=await accessToken(),sites=await listSites(token);
-        if(typeof d.property!=='string'||!sites.some(x=>x.siteUrl===d.property))throw fail(400,'Choose a Search Console property available to the connected Google account.');
-        const base={startDate:range.startDate,endDate:range.endDate,dataState:'final',type:'web'};
-        const [totalsRows,trendRows,queryRows,pageRows,previousPageRows,queryPageRows]=await Promise.all([
-          query(token,d.property,{...base,rowLimit:1}),
-          query(token,d.property,{...base,dimensions:['date'],rowLimit:25000}),
-          query(token,d.property,{...base,dimensions:['query'],rowLimit:100}),
-          query(token,d.property,{...base,dimensions:['page'],rowLimit:100}),
-          query(token,d.property,{...base,startDate:range.previousStartDate,endDate:range.previousEndDate,dimensions:['page'],rowLimit:100}),
-          query(token,d.property,{...base,dimensions:['query','page'],rowLimit:1000}),
-        ]);
-        const totals=totalsRows[0]?metric(totalsRows[0]):null;if(totals&&!validMetric(totals))throw googleError('Google returned invalid Search Console metrics.');
-        const trend=normalizeRows(trendRows,'date'),queries=normalizeRows(queryRows,'query'),pages=normalizeRows(pageRows,'page'),previousPages=normalizeRows(previousPageRows,'page'),queryPages=normalizeQueryPages(queryPageRows);
-        const previousMap=new Map(previousPages.map(x=>[x.page,x.clicks]));
-        const decliningPages=pages.map(x=>({...x,previousClicks:previousMap.get(x.page)||0,clickChange:x.clicks-(previousMap.get(x.page)||0)})).filter(x=>x.previousClicks>0&&x.clickChange<0).sort((a,b)=>a.clickChange-b.clickChange).slice(0,10);
-        const highImpressionLowCtr=queries.filter(x=>x.impressions>=10&&x.ctr<0.03).sort((a,b)=>b.impressions-a.impressions).slice(0,10);
-        const positionOpportunities=queries.filter(x=>x.position>=4&&x.position<=20).sort((a,b)=>b.impressions-a.impressions).slice(0,10);
-        const queryLandingOpportunities=queryPages.filter(x=>(x.impressions>=10&&x.ctr<0.03)||(x.position>=4&&x.position<=20)).sort((a,b)=>b.impressions-a.impressions||a.position-b.position).slice(0,30);
-        const report={id:randomUUID(),property:d.property,period,startDate:range.startDate,endDate:range.endDate,receivedAt:new Date().toISOString(),metrics:totals,trend,queries,pages,queryPages,opportunities:{highImpressionLowCtr,decliningPages,positionOpportunities,queryLandingOpportunities}};
-        db.prepare('INSERT INTO optimizer_reports VALUES(?,?)').run(report.id,JSON.stringify(report));db.exec('DELETE FROM optimizer_reports WHERE rowid NOT IN (SELECT rowid FROM optimizer_reports ORDER BY rowid DESC LIMIT 30)');
-        const g=readGoogle();writeGoogle({...g,properties:sites,lastSyncAt:report.receivedAt,updatedAt:report.receivedAt});audit('search_console_report_imported');json(res,200,report);return true;
+        const d=await body(req),period=typeof d.period==='string'?d.period:'28d';
+        const report=await syncSearchConsole({property:d.property,period});
+        json(res,200,report);return true;
       }
 
       if(path==='/api/search-console/performance'&&req.method==='GET'){
