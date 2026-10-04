@@ -38,6 +38,8 @@ async function work(c,fn){if(working)return;working=true;c.render();try{await fn
 export async function discoverabilityClick(el,c){
  if(el.hasAttribute('data-gsc-connect')){location.href='/api/auth/google';return true;}
  if(el.hasAttribute('data-gsc-disconnect')){if(confirm('Disconnect Google Search Console from this Marketing Studio?'))await work(c,async()=>{await c.api('search-console/disconnect','POST',{});c.notice('Google Search Console disconnected.');});return true;}
+ if(el.hasAttribute('data-supervisor-run')){await work(c,async()=>{const r=await c.api('discover/supervisor/run','POST',{});c.notice(`Supervisor complete. ${r.lastSummary?.tasksCreated||0} new review tasks created.`);});return true;}
+ if(el.dataset.supervisorToggle){await work(c,async()=>{const enabled=el.dataset.supervisorToggle==='on';await c.api('discover/supervisor','PATCH',{enabled});c.notice(enabled?'Automation Supervisor resumed.':'Automation Supervisor paused.');});return true;}
  if(el.hasAttribute('data-optimizer-prepare')){await work(c,async()=>{const r=await c.api('optimizer/prepare','POST',{});tab='tasks';c.notice(r.added+' improvements prepared from saved scans.');});return true;}
  if(el.dataset.gscTask){await work(c,async()=>{const r=await c.api('optimizer/search-console-task','POST',{reportId:el.dataset.reportId,index:Number(el.dataset.gscTask)});c.notice(r.created?'SEO task created.':'This SEO task already exists.');});return true;}
  if(el.dataset.optimizerStatus){const note=el.dataset.optimizerStatus==='completed'?prompt('Describe the change and how you verified it:'):'';if(note===null)return true;await work(c,()=>c.api('optimizer/tasks/'+el.dataset.id,'PATCH',{status:el.dataset.optimizerStatus,note}));return true;}
