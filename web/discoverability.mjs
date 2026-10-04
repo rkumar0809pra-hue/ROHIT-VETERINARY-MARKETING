@@ -232,6 +232,43 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     geo: new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
     sxo: new Set(['Page response','Main heading','Readable page content','Phone in page text','Image alt attributes','Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity']),
   };
+  const optimizerTasks=()=>db.prepare('SELECT data FROM optimizer_tasks ORDER BY rowid DESC LIMIT 300').all().map(x=>JSON.parse(x.data));
+  const saveOptimizerTask=t=>db.prepare('INSERT OR REPLACE INTO optimizer_tasks VALUES(?,?)').run(t.id,JSON.stringify(t));
+  const supervisorView=()=>{
+    const cfg=readSupervisor(),optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState});
+    return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours};
+  };
+  const supervisorTask=(signal)=>{
+    const key='supervisor|'+signal.key,existing=optimizerTasks().find(t=>t.key===key&&t.status!=='dismissed');
+    if(existing)return false;
+    const t={id:randomUUID(),key,kind:'Automation Supervisor',title:signal.title,url:'',evidence:signal.evidence,recommendation:signal.recommendation,priority:signal.priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true};
+    saveOptimizerTask(t);return true;
+  };
+  const supervise=async({force=false}={})=>{
+    const cfg=readSupervisor(),now=Date.now(),nextAt=cfg.nextRunAt?Date.parse(cfg.nextRunAt):0;
+    if(!cfg.enabled&&!force)return {...supervisorView(),skipped:'paused'};
+    if(!force&&Number.isFinite(nextAt)&&nextAt>now)return {...supervisorView(),skipped:'not-due'};
+    try{
+      const optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState,nowMs:now});
+      let created=0;
+      for(const signal of computed.signals)if(supervisorTask(signal))created++;
+      const report=computed.latestReport;
+      for(const row of (report?.opportunities?.queryLandingOpportunities||[]).slice(0,10)){
+        const key=`gsc|${report.property}|${row.query}|${row.page}`;
+        if(optimizerTasks().some(t=>t.key===key))continue;
+        const priority=row.impressions>=50||row.position<=10?'High':'Medium';
+        saveOptimizerTask({id:randomUUID(),key,kind:'Search Console',title:`Optimize query: ${row.query}`,url:row.page,evidence:`${row.impressions} impressions · ${row.clicks} clicks · ${(row.ctr*100).toFixed(2)}% CTR · average position ${row.position.toFixed(1)} · ${row.subdomain}`,recommendation:row.recommendation,priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true,searchConsole:{reportId:report.id,property:report.property,query:row.query,page:row.page}});created++;
+      }
+      const intervalHours=Math.min(24,Math.max(1,Number(cfg.intervalHours)||SUPERVISOR_INTERVAL_HOURS));
+      const lastRunAt=new Date(now).toISOString(),nextRunAt=new Date(now+intervalHours*3600000).toISOString();
+      const lastSummary={signals:computed.signals.length,tasksCreated:created,bulk:{...bulk.summary},searchConsoleOpportunities:report?.opportunities?.queryLandingOpportunities?.length||0};
+      writeSupervisor({...cfg,enabled:true,intervalHours,lastRunAt,nextRunAt,lastSummary,lastError:null});
+      audit('marketing_supervisor_ran');return supervisorView();
+    }catch(err){
+      writeSupervisor({...cfg,lastRunAt:new Date(now).toISOString(),nextRunAt:new Date(now+SUPERVISOR_INTERVAL_HOURS*3600000).toISOString(),lastError:'Supervisor run failed. Review connected services and try again.'});
+      audit('marketing_supervisor_failed');if(force)throw err;return supervisorView();
+    }
+  };
   const readiness = () => {
     const seo=readSeo(),aio=readAio(),geo=readGeo(),sxo=readSxo(),optimizerState=optimizer.state();
     const latestByHost=new Map();
@@ -261,10 +298,22 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     };
   };
   return {
-    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), sxo: readSxo(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, sxoChecklist: SXO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), sxo: readSxo(), supervisor: supervisorView(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, sxoChecklist: SXO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    supervise,
     async route(req, res, path, role) {
       if(await optimizer.route(req,res,path,role))return true;
       const owner = () => { if (role !== 'owner') throw fail(403, 'Only the owner can change this setting.'); };
+
+      if(path === '/api/discover/supervisor/run' && req.method === 'POST') {
+        owner();json(res,200,await supervise({force:true}));return true;
+      }
+      if(path === '/api/discover/supervisor' && req.method === 'PATCH') {
+        owner();const data=await body(req),cfg=readSupervisor();
+        const enabled=typeof data.enabled==='boolean'?data.enabled:cfg.enabled;
+        const intervalHours=data.intervalHours===undefined?cfg.intervalHours:Math.min(24,Math.max(1,Number(data.intervalHours)||SUPERVISOR_INTERVAL_HOURS));
+        const nextRunAt=enabled?(cfg.nextRunAt||new Date(Date.now()+intervalHours*3600000).toISOString()):cfg.nextRunAt;
+        writeSupervisor({...cfg,enabled,intervalHours,nextRunAt});audit(enabled?'marketing_supervisor_enabled':'marketing_supervisor_paused');json(res,200,supervisorView());return true;
+      }
 
       if(path === '/api/discover/bulk-products/start' && req.method === 'POST') {
         owner();quota('bulk product sitemap refresh',10);
