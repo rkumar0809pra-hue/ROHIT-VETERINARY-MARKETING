@@ -4,6 +4,42 @@ const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 const STATE_TTL_MS = 10 * 60 * 1000;
 const PERIODS = { '7d': 7, '28d': 28, '3m': 90 };
 const TOKEN_AAD = Buffer.from('rvh-google-search-console-v1');
+export const MASTER_SEARCH_CONSOLE_PROPERTY = 'sc-domain:rohitveterinary.com';
+
+const normalizedQuery=value=>String(value||'').trim().toLowerCase().replace(/\s+/g,' ');
+const normalizedPage=value=>{
+  try{
+    const u=new URL(String(value||'').trim());
+    u.hash='';
+    return u.toString();
+  }catch{return String(value||'').trim();}
+};
+
+export function canonicalSearchTaskKey(query,page){
+  return `gsc|${normalizedQuery(query)}|${normalizedPage(page)}`;
+}
+
+export function selectMasterSearchConsoleReport(list){
+  const reports=Array.isArray(list)?list:[];
+  return reports.find(r=>r?.property===MASTER_SEARCH_CONSOLE_PROPERTY&&r?.period==='28d')
+    || reports.find(r=>r?.property===MASTER_SEARCH_CONSOLE_PROPERTY)
+    || reports[0]
+    || null;
+}
+
+export function dedupeOptimizerTasks(list){
+  const rows=Array.isArray(list)?list:[];
+  const out=[],indexByKey=new Map(),statusRank={approved:4,review:4,completed:2,dismissed:1};
+  for(const task of rows){
+    if(task?.kind!=='Search Console'||!task?.searchConsole?.query||!task?.url){out.push(task);continue;}
+    const key=canonicalSearchTaskKey(task.searchConsole.query,task.url);
+    const existingIndex=indexByKey.get(key);
+    if(existingIndex===undefined){indexByKey.set(key,out.length);out.push(task);continue;}
+    const current=out[existingIndex],score=x=>(statusRank[x?.status]||0)*10+(x?.searchConsole?.property===MASTER_SEARCH_CONSOLE_PROPERTY?2:0)+(Date.parse(x?.createdAt||0)||0)/1e15;
+    if(score(task)>score(current))out[existingIndex]=task;
+  }
+  return out;
+}
 
 export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
   db.exec(`CREATE TABLE IF NOT EXISTS optimizer_tasks(id TEXT PRIMARY KEY,data TEXT NOT NULL);
@@ -11,7 +47,8 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
     CREATE TABLE IF NOT EXISTS optimizer_google(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS optimizer_oauth_states(hash TEXT PRIMARY KEY,created_at INTEGER NOT NULL);`);
 
-  const tasks=()=>db.prepare('SELECT data FROM optimizer_tasks ORDER BY rowid DESC LIMIT 300').all().map(x=>JSON.parse(x.data));
+  const rawTasks=()=>db.prepare('SELECT data FROM optimizer_tasks ORDER BY rowid DESC LIMIT 300').all().map(x=>JSON.parse(x.data));
+  const tasks=()=>dedupeOptimizerTasks(rawTasks());
   const reports=()=>db.prepare('SELECT data FROM optimizer_reports ORDER BY rowid DESC LIMIT 30').all().map(x=>JSON.parse(x.data));
   const save=t=>db.prepare('INSERT OR REPLACE INTO optimizer_tasks VALUES(?,?)').run(t.id,JSON.stringify(t));
   const readGoogle=()=>{try{return JSON.parse(db.prepare('SELECT data FROM optimizer_google WHERE id=1').get()?.data||'null');}catch{return null;}};
@@ -37,8 +74,9 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
     return Buffer.concat([decipher.update(Buffer.from(data,'base64url')),decipher.final()]).toString('utf8');
   };
   const publicSearchConsole=()=>{
-    const g=readGoogle();
-    return {configured:googleConfig().valid,connected:Boolean(g?.refreshToken),properties:(g?.properties||[]).map(x=>x.siteUrl),connectedAt:g?.connectedAt||null,lastSyncAt:g?.lastSyncAt||null};
+    const g=readGoogle(),properties=(g?.properties||[]).map(x=>x.siteUrl);
+    properties.sort((a,b)=>(a===MASTER_SEARCH_CONSOLE_PROPERTY?-1:b===MASTER_SEARCH_CONSOLE_PROPERTY?1:a.localeCompare(b)));
+    return {configured:googleConfig().valid,connected:Boolean(g?.refreshToken),properties,masterProperty:properties.includes(MASTER_SEARCH_CONSOLE_PROPERTY)?MASTER_SEARCH_CONSOLE_PROPERTY:null,connectedAt:g?.connectedAt||null,lastSyncAt:g?.lastSyncAt||null};
   };
   const redirect=(res,location,status=303)=>{res.writeHead(status,{Location:location,'Cache-Control':'no-store'});res.end();};
   const googleError=(message='Google Search Console request failed. Reconnect Google and try again.')=>fail(502,message);
@@ -191,7 +229,7 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
         if(typeof d.reportId!=='string'||!Number.isInteger(d.index)||d.index<0||d.index>29)throw fail(400,'Choose a valid Search Console opportunity.');
         const report=reports().find(r=>r.id===d.reportId),row=report?.opportunities?.queryLandingOpportunities?.[d.index];
         if(!report||!row)throw fail(404,'Search Console opportunity not found. Refresh the report and try again.');
-        const key=`gsc|${report.property}|${row.query}|${row.page}`,existing=tasks().find(t=>t.key===key);
+        const key=canonicalSearchTaskKey(row.query,row.page),existing=tasks().find(t=>t.kind==='Search Console'&&canonicalSearchTaskKey(t.searchConsole?.query,t.url)===key);
         if(existing){json(res,200,{created:false,task:existing});return true;}
         const priority=row.impressions>=50||row.position<=10?'High':'Medium';
         const t={id:randomUUID(),key,kind:'Search Console',title:`Optimize query: ${row.query}`,url:row.page,evidence:`${row.impressions} impressions · ${row.clicks} clicks · ${(row.ctr*100).toFixed(2)}% CTR · average position ${row.position.toFixed(1)} · ${row.subdomain}`,recommendation:row.recommendation,priority,status:'review',createdAt:new Date().toISOString(),history:[],searchConsole:{reportId:report.id,property:report.property,query:row.query,page:row.page}};
@@ -219,7 +257,7 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
       }
       const match=/^\/api\/optimizer\/tasks\/([a-f0-9-]+)$/.exec(path);
       if(match&&req.method==='PATCH'){
-        const d=await body(req),t=tasks().find(t=>t.id===match[1]);if(!t)throw fail(404,'Task not found.');
+        const d=await body(req),t=rawTasks().find(t=>t.id===match[1]);if(!t)throw fail(404,'Task not found.');
         const allowed={review:['approved','dismissed'],approved:['completed','review'],completed:['review'],dismissed:['review']};
         if(!allowed[t.status].includes(d.status))throw fail(400,'Invalid task transition. Review and approve the task first.');
         if(typeof d.note!=='string'||d.note.length>1000||(d.status==='completed'&&!d.note.trim()))throw fail(400,'Add a completion note describing the change and verification.');

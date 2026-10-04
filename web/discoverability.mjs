@@ -1,4 +1,4 @@
-import { createOptimizer } from './optimizer.mjs';
+import { createOptimizer, canonicalSearchTaskKey, selectMasterSearchConsoleReport } from './optimizer.mjs';
 import { randomUUID } from 'node:crypto';
 import { scanWebsite, readPublicPage, SCAN_HOSTS } from './website-scan.mjs';
 
@@ -47,7 +47,7 @@ export const SUPERVISOR_INTERVAL_HOURS = 6;
 
 export function buildSupervisorSignals({bulk,optimizerState,nowMs=Date.now()}) {
   const summary=bulk?.summary||{};
-  const latestReport=optimizerState?.reports?.[0]||null;
+  const latestReport=selectMasterSearchConsoleReport(optimizerState?.reports);
   const latestAt=latestReport?.receivedAt?Date.parse(latestReport.receivedAt):NaN;
   const reportAgeHours=Number.isFinite(latestAt)?Math.max(0,(nowMs-latestAt)/3600000):null;
   const tasks=Array.isArray(optimizerState?.tasks)?optimizerState.tasks:[];
@@ -236,7 +236,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const saveOptimizerTask=t=>db.prepare('INSERT OR REPLACE INTO optimizer_tasks VALUES(?,?)').run(t.id,JSON.stringify(t));
   const supervisorView=()=>{
     const cfg=readSupervisor(),optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState});
-    return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours};
+    return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours,masterProperty:optimizerState.searchConsole?.masterProperty||null};
   };
   const supervisorTask=(signal)=>{
     const key='supervisor|'+signal.key,existing=optimizerTasks().find(t=>t.key===key);
@@ -252,12 +252,13 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       const optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState,nowMs:now});
       let created=0;
       for(const signal of computed.signals)if(supervisorTask(signal))created++;
-      const report=computed.latestReport;
+      const report=computed.latestReport,currentTasks=optimizer.state().tasks;
       for(const row of (report?.opportunities?.queryLandingOpportunities||[]).slice(0,10)){
-        const key=`gsc|${report.property}|${row.query}|${row.page}`;
-        if(optimizerTasks().some(t=>t.key===key))continue;
+        const key=canonicalSearchTaskKey(row.query,row.page);
+        if(currentTasks.some(t=>t.kind==='Search Console'&&canonicalSearchTaskKey(t.searchConsole?.query,t.url)===key))continue;
         const priority=row.impressions>=50||row.position<=10?'High':'Medium';
-        saveOptimizerTask({id:randomUUID(),key,kind:'Search Console',title:`Optimize query: ${row.query}`,url:row.page,evidence:`${row.impressions} impressions · ${row.clicks} clicks · ${(row.ctr*100).toFixed(2)}% CTR · average position ${row.position.toFixed(1)} · ${row.subdomain}`,recommendation:row.recommendation,priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true,searchConsole:{reportId:report.id,property:report.property,query:row.query,page:row.page}});created++;
+        const task={id:randomUUID(),key,kind:'Search Console',title:`Optimize query: ${row.query}`,url:row.page,evidence:`${row.impressions} impressions · ${row.clicks} clicks · ${(row.ctr*100).toFixed(2)}% CTR · average position ${row.position.toFixed(1)} · ${row.subdomain}`,recommendation:row.recommendation,priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true,searchConsole:{reportId:report.id,property:report.property,query:row.query,page:row.page}};
+        saveOptimizerTask(task);currentTasks.push(task);created++;
       }
       const intervalHours=Math.min(24,Math.max(1,Number(cfg.intervalHours)||SUPERVISOR_INTERVAL_HOURS));
       const lastRunAt=new Date(now).toISOString(),nextRunAt=new Date(now+intervalHours*3600000).toISOString();
@@ -284,7 +285,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       auto[kind]={passed:checks.filter(c=>c.passed).length,total:checks.length};
     }
     const manual=(items,state)=>({passed:items.filter(([key])=>Boolean(state.checklist?.[key])).length,total:items.length});
-    const latestReport=optimizerState.reports?.[0]||null;
+    const latestReport=selectMasterSearchConsoleReport(optimizerState.reports);
     return {
       pagesScanned:scans.length,
       automated:auto,
@@ -323,7 +324,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         if(!urls.length)throw fail(502,'No Vet Mart product URLs were found in the sitemap.');
         const previousBulk=readBulk(),previousProducts=Array.isArray(previousBulk.products)?previousBulk.products:[];
         const previous=new Map(previousProducts.map(p=>[p.url,p]));
-        const report=optimizer.state().reports?.[0]||null;
+        const report=selectMasterSearchConsoleReport(optimizer.state().reports);
         const products=urls.map(url=>{
           const old=previous.get(url)||{},slug=decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||''),priority=productSearchPriority(url,report);
           return {url,slug,status:old.status||'pending',checkedAt:old.checkedAt||null,readiness:old.readiness||null,failures:old.failures||[],error:old.error||null,...priority};
