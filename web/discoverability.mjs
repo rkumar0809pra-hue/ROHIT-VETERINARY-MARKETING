@@ -54,10 +54,10 @@ export function buildSupervisorSignals({bulk,optimizerState,nowMs=Date.now()}) {
   const openTasks=tasks.filter(t=>['review','approved'].includes(t.status)).length;
   const signals=[];
   if(optimizerState?.searchConsole?.connected && (reportAgeHours===null || reportAgeHours>72)) {
-    signals.push({key:'gsc-stale',priority:'High',title:'Refresh Google Search Console data',evidence:reportAgeHours===null?'No saved Search Console report.':`Latest saved report is ${Math.floor(reportAgeHours)} hours old.`,recommendation:'Refresh the 28-day Search Console report so product priorities and query-to-page opportunities use current data.'});
+    signals.push({key:`gsc-stale|${latestReport?.id||'none'}`,priority:'High',title:'Refresh Google Search Console data',evidence:reportAgeHours===null?'No saved Search Console report.':`Latest saved report is ${Math.floor(reportAgeHours)} hours old.`,recommendation:'Refresh the 28-day Search Console report so product priorities and query-to-page opportunities use current data.'});
   }
   if((summary.driftAdded||0)||(summary.driftRemoved||0)) {
-    signals.push({key:'catalogue-drift',priority:(summary.driftUnresolved||0)>0?'High':'Medium',title:'Review Vet Mart catalogue drift',evidence:`${summary.driftAdded||0} new/renamed URLs · ${summary.driftRemoved||0} removed/old URLs · ${summary.driftUnresolved||0} unresolved.`,recommendation:(summary.driftUnresolved||0)>0?'Audit unresolved new/renamed product URLs before treating the catalogue as fully current.':'Catalogue drift is resolved in the HTML audit; retain the record for review and confirm no old links require redirects.'});
+    signals.push({key:`catalogue-drift|${bulk?.drift?.detectedAt||'current'}`,priority:(summary.driftUnresolved||0)>0?'High':'Medium',title:'Review Vet Mart catalogue drift',evidence:`${summary.driftAdded||0} new/renamed URLs · ${summary.driftRemoved||0} removed/old URLs · ${summary.driftUnresolved||0} unresolved.`,recommendation:(summary.driftUnresolved||0)>0?'Audit unresolved new/renamed product URLs before treating the catalogue as fully current.':'Catalogue drift is resolved in the HTML audit; retain the record for review and confirm no old links require redirects.'});
   }
   if((summary.pending||0)>0) signals.push({key:'bulk-pending',priority:'High',title:'Complete pending Vet Mart audits',evidence:`${summary.pending} product URLs are pending.`,recommendation:'Run controlled bulk audit batches until Pending reaches 0.'});
   if((summary.failed||0)>0) signals.push({key:'bulk-failed',priority:'High',title:'Retry failed Vet Mart scans',evidence:`${summary.failed} product scans failed.`,recommendation:'Retry the failed public-page scans and investigate any URL that continues to fail.'});
@@ -239,7 +239,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours};
   };
   const supervisorTask=(signal)=>{
-    const key='supervisor|'+signal.key,existing=optimizerTasks().find(t=>t.key===key&&t.status!=='dismissed');
+    const key='supervisor|'+signal.key,existing=optimizerTasks().find(t=>t.key===key);
     if(existing)return false;
     const t={id:randomUUID(),key,kind:'Automation Supervisor',title:signal.title,url:'',evidence:signal.evidence,recommendation:signal.recommendation,priority:signal.priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true};
     saveOptimizerTask(t);return true;
