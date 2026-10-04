@@ -103,6 +103,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
     "/studio-ui.js": ["studio-ui.js", "text/javascript"],
     "/": ["index.html", "text/html"],
     "/app.js": ["app.js", "text/javascript"],
+    "/story-handoff.js": ["story-handoff.js", "text/javascript"],
     "/styles.css": ["styles.css", "text/css"],
     "/sw.js": ["sw.js", "text/javascript"],
     "/manifest.webmanifest": [
@@ -273,6 +274,11 @@ export function createApp({ env = process.env, generateImpl = generate, provider
               brief,
               metrics: metrics(),
               profile: studio.profile(),
+              campaignContext: agent.id === 'story' ? {
+                recentStories: db.prepare("SELECT title, content, status, created_at FROM drafts WHERE agent='story' ORDER BY created_at DESC LIMIT 8").all().map(d => ({...d, content: d.content.slice(0, 1800)})),
+                availableAssets: db.prepare("SELECT id,title,category,description FROM media WHERE kind='upload' AND status='completed' ORDER BY created_at DESC LIMIT 30").all(),
+                limitations: 'Recent stories may be unapproved. Asset labels are user descriptions, not visual verification or consent. Never infer performance from draft status.'
+              } : undefined,
             }),
             20000,
           );

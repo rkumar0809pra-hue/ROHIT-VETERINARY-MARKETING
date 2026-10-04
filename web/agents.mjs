@@ -1,5 +1,13 @@
 import { brandInstructions } from "./brand.mjs";
+import { collectEstablishment, sourceReceipt, storyInstruction } from "./story-creator.mjs";
 export const agents = [
+  {
+    id: "story",
+    name: "RVH Story Creator",
+    icon: "✧",
+    description: "Gather clinic details and suggest a complete video, poster and social campaign.",
+    instruction: storyInstruction,
+  },
   {
     id: "strategy",
     name: "Marketing strategist",
@@ -61,7 +69,10 @@ export async function generate({
   metrics,
   profile,
   fetchImpl = fetch,
+  researchImpl = collectEstablishment,
+  campaignContext,
 }) {
+  const establishmentResearch = agent.id === "story" ? await researchImpl() : undefined;
   const response = await fetchImpl("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -71,10 +82,12 @@ export async function generate({
     body: JSON.stringify({
       model,
       store: false,
-      max_output_tokens: agent.id === "manager" ? 8000 : 2400,
+      max_output_tokens: agent.id === "manager" ? 8000 : agent.id === "story" ? 5000 : 2400,
       instructions: instructions(agent, language, profile),
       input: JSON.stringify({
         brief,
+        establishmentResearch,
+        campaignContext: agent.id === "story" ? campaignContext : undefined,
         aggregateMetrics: agent.id === "analytics" ? metrics : undefined,
       }),
     }),
@@ -100,5 +113,5 @@ export async function generate({
     throw new Error(
       "The AI returned no usable draft. Please revise the brief.",
     );
-  return output;
+  return output + (establishmentResearch ? sourceReceipt(establishmentResearch) : "");
 }
