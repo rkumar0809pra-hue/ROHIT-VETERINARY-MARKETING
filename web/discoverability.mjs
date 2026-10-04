@@ -305,8 +305,39 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     if(!cfg.enabled&&!force)return {...supervisorView(),skipped:'paused'};
     if(!force&&Number.isFinite(nextAt)&&nextAt>now)return {...supervisorView(),skipped:'not-due'};
     try{
+      const automatic={searchConsoleRefreshed:false,sitemapRefreshed:false,productsAudited:0,productTasksCreated:0},errors=[];
+      let stateBefore=optimizer.state(),masterReport=selectMasterSearchConsoleReport(stateBefore.reports);
+      const masterAgeHours=masterReport?.receivedAt?Math.max(0,(now-Date.parse(masterReport.receivedAt))/3600000):null;
+      if(stateBefore.searchConsole?.connected&&stateBefore.searchConsole?.masterProperty&&(masterAgeHours===null||masterAgeHours>=AUTO_GSC_REFRESH_HOURS)){
+        try{
+          const synced=await optimizer.syncMasterSearchConsole('28d');
+          automatic.searchConsoleRefreshed=Boolean(synced?.report);
+        }catch{
+          errors.push('Automatic Search Console refresh failed.');
+        }
+      }
+      try{
+        await refreshProductSitemap();automatic.sitemapRefreshed=true;
+      }catch{
+        errors.push('Automatic Vet Mart sitemap refresh failed.');
+      }
+      try{
+        const audited=await auditPendingProducts({limit:AUTO_PRODUCT_AUDIT_LIMIT});
+        automatic.productsAudited=audited.scanned||0;
+        if(audited.auditedUrls?.length){
+          const latestBulk=readBulk();
+          for(const url of audited.auditedUrls){
+            const product=latestBulk.products.find(p=>p.url===url);
+            const result=createBulkProductTask(product);
+            if(result.created)automatic.productTasksCreated++;
+          }
+        }
+      }catch{
+        errors.push('Automatic new-product audit failed.');
+      }
+
       const optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState,nowMs:now});
-      let created=0;
+      let created=automatic.productTasksCreated;
       for(const signal of computed.signals)if(supervisorTask(signal))created++;
       const report=computed.latestReport,currentTasks=optimizer.state().tasks;
       for(const row of (report?.opportunities?.queryLandingOpportunities||[]).slice(0,10)){
@@ -318,8 +349,8 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       }
       const intervalHours=Math.min(24,Math.max(1,Number(cfg.intervalHours)||SUPERVISOR_INTERVAL_HOURS));
       const lastRunAt=new Date(now).toISOString(),nextRunAt=new Date(now+intervalHours*3600000).toISOString();
-      const lastSummary={signals:computed.signals.length,tasksCreated:created,bulk:{...bulk.summary},searchConsoleOpportunities:report?.opportunities?.queryLandingOpportunities?.length||0};
-      writeSupervisor({...cfg,enabled:true,intervalHours,lastRunAt,nextRunAt,lastSummary,lastError:null});
+      const lastSummary={signals:computed.signals.length,tasksCreated:created,automatic,bulk:{...bulk.summary},searchConsoleOpportunities:report?.opportunities?.queryLandingOpportunities?.length||0};
+      writeSupervisor({...cfg,enabled:true,intervalHours,lastRunAt,nextRunAt,lastSummary,lastError:errors.length?errors.join(' '):null});
       audit('marketing_supervisor_ran');return supervisorView();
     }catch(err){
       writeSupervisor({...cfg,lastRunAt:new Date(now).toISOString(),nextRunAt:new Date(now+SUPERVISOR_INTERVAL_HOURS*3600000).toISOString(),lastError:'Supervisor run failed. Review connected services and try again.'});
