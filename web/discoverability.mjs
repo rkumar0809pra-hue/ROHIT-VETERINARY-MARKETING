@@ -199,6 +199,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     seo: new Set(['Page response','Page title','Search description','Canonical link','Indexing directive','Image alt attributes']),
     aeo: new Set(['Main heading','Readable page content','Structured data','Phone in page text']),
     geo: new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
+    sxo: new Set(['Page response','Main heading','Readable page content','Phone in page text','Image alt attributes','Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity']),
   };
   const readiness = () => {
     const seo=readSeo(),aio=readAio(),geo=readGeo(),sxo=readSxo(),optimizerState=optimizer.state();
