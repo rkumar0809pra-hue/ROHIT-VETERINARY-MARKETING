@@ -102,11 +102,15 @@ test("automation supervisor identifies stale search data and unresolved bulk wor
     },
     optimizerState:{
       searchConsole:{connected:true},
-      reports:[{id:"r1",receivedAt:"2026-09-30T12:00:00.000Z"}],
+      reports:[
+        {id:"prefix-fresh",property:"https://www.rohitveterinary.com/",period:"28d",receivedAt:"2026-10-04T10:00:00.000Z"},
+        {id:"r1",property:"sc-domain:rohitveterinary.com",period:"28d",receivedAt:"2026-09-30T12:00:00.000Z"},
+      ],
       tasks:[{status:"review"},{status:"completed"}],
     }
   });
   assert.equal(result.openTasks,1);
+  assert.equal(result.latestReport.id,"r1");
   assert.ok(result.reportAgeHours>72);
   const keys=result.signals.map(x=>x.key);
   assert.ok(keys.includes("gsc-stale|r1"));
