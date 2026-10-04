@@ -169,7 +169,7 @@ export async function checkOnline({ key, model, prompt, fetchImpl = fetch }) {
   return {text:output,sources:sources.slice(0,10)};
 }
 
-export function createDiscoverability({ db, env, audit, json, body, requiredText, fail, quota, profile, generateImpl, scanImpl = scanWebsite, checkImpl = checkOnline }) {
+export function createDiscoverability({ db, env, audit, json, body, requiredText, fail, quota, profile, generateImpl, scanImpl = scanWebsite, sitemapReadImpl = readPublicPage, checkImpl = checkOnline }) {
   db.exec(`CREATE TABLE IF NOT EXISTS seo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
@@ -230,7 +230,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const AUTO_PRODUCT_AUDIT_LIMIT=20;
 
   async function refreshProductSitemap() {
-    let sitemap;try{sitemap=await readPublicPage(PRODUCT_SITEMAP_URL);}catch{throw fail(502,'Could not read the Vet Mart product sitemap. Try again after confirming the sitemap is live.');}
+    let sitemap;try{sitemap=await sitemapReadImpl(PRODUCT_SITEMAP_URL);}catch{throw fail(502,'Could not read the Vet Mart product sitemap. Try again after confirming the sitemap is live.');}
     if(sitemap.status!==200)throw fail(502,'Vet Mart product sitemap did not return HTTP 200.');
     const urls=parseProductSitemap(sitemap.text);
     if(!urls.length)throw fail(502,'No Vet Mart product URLs were found in the sitemap.');
