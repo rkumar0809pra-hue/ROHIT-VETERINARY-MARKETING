@@ -127,14 +127,7 @@ export async function studioSubmit(form,submitter,c){
  if(await discoverabilitySubmit(form,c))return true;
  if(await advertisementSubmit(form,c))return true;
  const {state,api,refresh,render,notice,go}=c;
- if(el.dataset.storyUse){
-   const d=state.drafts.find(d=>d.id===c.draftId), parts=storyHandoff(d), target=el.dataset.storyUse;
-   if(!parts[target])throw Error('Approve the story and check its handoff blocks first.');
-   if(target==='video'){useStoryVideo(d,parts.video);go('video');}
-   else if(target==='poster'){quickPoster=parts.poster;go('images');}
-   else {builder={title:d.title,platform:target==='whatsapp'?'WhatsApp':'Facebook',category:categories[0],audience:audiences[0],service:'',tone:tones[0],language:d.language,cta:'Call to book a consultation',content:parts[target],headline:'',hashtags:'',imagePrompt:'',videoPrompt:''};go(target==='whatsapp'?'whatsapp':'creator');}
-   notice('Story content transferred as an editable draft. Nothing has been generated or published.');return true;
- }const value=id=>document.getElementById(id).value;
+ const value=id=>document.getElementById(id).value;
  if(form.dataset.photoEdit){const data=Object.fromEntries(new FormData(form));await api('media/'+form.dataset.photoEdit,'PATCH',data);await refresh();render();notice('Photo details saved.');return true;}
  if(form.id==='manager-form'){
   if(pending)return true;const f=new FormData(form),data={goal:f.get('goal'),availability:f.get('availability'),week:f.get('week'),budget:Number(f.get('budget'))};pending=true;const button=form.querySelector('button');button.disabled=true;button.textContent='Preparing your week…';
