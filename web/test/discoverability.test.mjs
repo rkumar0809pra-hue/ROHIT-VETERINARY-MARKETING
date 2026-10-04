@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../server.mjs";
 import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots } from "../discoverability.mjs";
+import { analysePage } from "../website-scan.mjs";
+import { discoverPage } from "../public/discoverability-ui.js";
 
 const password = "owner-test-password-long";
 
@@ -80,6 +82,7 @@ test("bulk readiness separates SEO, AEO and GEO and preserves failures", () => {
   assert.equal(result.readiness.seo.ready,true);
   assert.equal(result.readiness.aeo.ready,false);
   assert.equal(result.readiness.geo.ready,false);
+  assert.equal(result.readiness.sxo.ready,false);
   assert.deepEqual(result.failures.map(x=>x.label),["Readable page content"]);
 });
 
@@ -100,6 +103,28 @@ test("Search Console product priority distinguishes exact and query-name matches
   assert.equal(unknown.gsc,null);
 });
 
+test("SXO scan signals detect mobile, action, navigation, price and availability on a product page", () => {
+  assert.equal(typeof discoverPage,"function");
+  const html=`<!doctype html><html><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Veterinary product">
+    <title>Test Product — RVH Vet Mart</title>
+    <link rel="canonical" href="https://mart.rohitveterinary.com/product/test-product">
+    <script type="application/ld+json">{"@type":"Product"}</script>
+  </head><body>
+    <h1>Test Product</h1>
+    <p>Useful veterinary product information with enough readable content for a customer to understand the product before ordering. Contact Rohit Veterinary House at 9709095993 for support. Current price ₹100 and 5 in stock.</p>
+    <img src="/test.jpg" alt="Test Product">
+    <a href="/catalog">Related products</a>
+    <button>Add to cart</button>
+  </body></html>`;
+  const scan=analysePage({url:"https://mart.rohitveterinary.com/product/test-product",status:200,headers:{},text:html},{phone:"9709095993"});
+  const byLabel=new Map(scan.checks.map(x=>[x.label,x]));
+  for(const label of ["Mobile viewport","Primary action","Internal navigation","Product price clarity","Product availability clarity"])assert.equal(byLabel.get(label)?.passed,true,label);
+  const bulk=classifyBulkScan(scan);
+  assert.equal(bulk.readiness.sxo.ready,true);
+});
+
 test("SEO/AIO state defaults and checklist item validation", async (t) => {
   const f = await fixture(t);
   await f.login();
@@ -107,6 +132,7 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   assert.deepEqual(s.seo, { domains: [], brand: "", checklist: {}, keywords: [], scans: [] });
   assert.deepEqual(s.aio, { checklist: {}, queries: [] });
   assert.deepEqual(s.geo, { checklist: {} });
+  assert.deepEqual(s.sxo, { checklist: {} });
   assert.equal(s.bulkProductAudit.summary.total, 0);
   assert.equal(s.bulkProductAudit.sitemapUrl, "https://app.rohitveterinary.com/api/store/sitemap.xml");
   assert.equal(s.bulkProductAudit.summary.driftAdded, 0);
@@ -115,7 +141,9 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
   assert.equal(s.geoChecklist.length, 7);
+  assert.equal(s.sxoChecklist.length, 7);
   assert.equal(s.visibility.manual.geo.total, 7);
+  assert.equal(s.visibility.manual.sxo.total, 7);
   assert.match(s.visibility.note, /not Google/i);
   assert.equal((await f.req("seo/checklist", "PATCH", { key: "not-a-real-key" })).status, 400);
 });
@@ -144,11 +172,15 @@ test("checklist toggles persist and compute independently for SEO and AIO", asyn
   assert.equal(r.data.checklist.qa, true);
   r = await f.req("geo/checklist", "PATCH", { key: "entity" });
   assert.equal(r.data.checklist.entity, true);
+  r = await f.req("sxo/checklist", "PATCH", { key: "cta" });
+  assert.equal(r.data.checklist.cta, true);
   const s = (await f.req("state")).data;
   assert.equal(s.seo.checklist.titles, false);
   assert.equal(s.aio.checklist.qa, true);
   assert.equal(s.geo.checklist.entity, true);
   assert.equal(s.visibility.manual.geo.passed, 1);
+  assert.equal(s.sxo.checklist.cta, true);
+  assert.equal(s.visibility.manual.sxo.passed, 1);
 });
 
 test("keyword add/delete and check requires a configured domain and AI setup", async (t) => {
