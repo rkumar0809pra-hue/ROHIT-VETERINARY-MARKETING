@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../server.mjs";
-import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots } from "../discoverability.mjs";
+import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots, hasBulkSxoAudit } from "../discoverability.mjs";
 import { analysePage } from "../website-scan.mjs";
 import { discoverPage } from "../public/discoverability-ui.js";
 
@@ -86,6 +86,12 @@ test("bulk readiness separates SEO, AEO and GEO and preserves failures", () => {
   assert.deepEqual(result.failures.map(x=>x.label),["Readable page content"]);
 });
 
+test("legacy bulk products without SXO are not treated as fully audited", () => {
+  assert.equal(hasBulkSxoAudit({readiness:{seo:{total:6},aeo:{total:4},geo:{total:4}}}),false);
+  assert.equal(hasBulkSxoAudit({readiness:{sxo:{passed:10,total:10,ready:true}}}),true);
+  assert.equal(hasBulkSxoAudit({readiness:{sxo:{passed:0,total:0,ready:false}}}),false);
+});
+
 test("Search Console product priority distinguishes exact and query-name matches", () => {
   const report={queryPages:[
     {query:"mastina ptm bolus price",page:"https://mart.rohitveterinary.com/catalog?problem=mastitis",impressions:96,clicks:1,ctr:.0104,position:7.1},
@@ -138,6 +144,7 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   assert.equal(s.bulkProductAudit.summary.driftAdded, 0);
   assert.equal(s.bulkProductAudit.summary.driftRemoved, 0);
   assert.equal(s.bulkProductAudit.summary.driftUnresolved, 0);
+  assert.equal(s.bulkProductAudit.summary.needsSxo, 0);
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
   assert.equal(s.geoChecklist.length, 7);
