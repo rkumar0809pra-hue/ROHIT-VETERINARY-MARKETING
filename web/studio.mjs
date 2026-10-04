@@ -83,6 +83,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       else track(poll(row));
     }
     track(ads.tick());
+    track(discover.supervise());
   },15000);
   timer.unref();
   function metadata(data) {
