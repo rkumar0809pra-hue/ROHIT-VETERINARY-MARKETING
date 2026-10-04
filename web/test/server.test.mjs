@@ -41,6 +41,19 @@ async function fixture(t, options = {}) {
     login: () => request("login", "POST", { password: env.ADMIN_PASSWORD }),
   };
 }
+test("story runs receive persisted campaign context and keep new output unapproved", async (t) => {
+  let received;
+  const f = await fixture(t, {env:{OPENAI_API_KEY:'test',OPENAI_MODEL:'test'},generateImpl:async args=>{received=args;return 'New story';}});
+  await f.login();
+  const request = {agent:'story',language:'Hindi',brief:'Introduce RVH'};
+  assert.equal((await f.request('runs','POST',request)).status,201);
+  const result = await f.request('runs','POST',request);
+  assert.equal(result.status,201);
+  assert.equal(result.data.status,'draft');
+  assert.equal(received.campaignContext.recentStories.length,1);
+  assert.equal(received.campaignContext.recentStories[0].content,'New story');
+  assert.deepEqual(received.campaignContext.availableAssets,[]);
+});
 test("authentication, origin checking and logout", async (t) => {
   const f = await fixture(t);
   assert.equal((await f.request("state")).status, 401);

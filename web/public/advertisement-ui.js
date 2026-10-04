@@ -83,3 +83,8 @@ export async function advertisementSubmit(form,c){
   await c.refresh();busy=false;c.render();
  }finally{busy=false;if(button)button.disabled=false;}return true;
 }
+
+export function useStoryVideo(draft, topic) {
+ selected=''; step=1;
+ brief={title:draft.title,topic,presenter:'',presenterType:'female',voice:'coral',voiceStyle:'warm',duration:'30',ratio:'9:16',language:draft.language,photoIds:[]};
+}
