@@ -174,12 +174,14 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS sxo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE IF NOT EXISTS marketing_supervisor(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS bulk_product_audit(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
 
   const defaultSeo = () => ({ domains: [], brand: '', checklist: {}, keywords: [], scans: [] });
   const defaultAio = () => ({ checklist: {}, queries: [] });
   const defaultGeo = () => ({ checklist: {} });
   const defaultSxo = () => ({ checklist: {} });
+  const defaultSupervisor = () => ({ enabled:true, intervalHours:SUPERVISOR_INTERVAL_HOURS, lastRunAt:null, nextRunAt:null, lastSummary:null, lastError:null });
   const defaultBulk = () => ({ sitemapUrl: PRODUCT_SITEMAP_URL, refreshedAt: null, products: [], drift: { detectedAt: null, baselineRefreshedAt: null, added: [], removed: [] } });
   const readSeo = () => ({ ...defaultSeo(), ...JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data || '{}') });
   const writeSeo = (d) => db.prepare('INSERT OR REPLACE INTO seo VALUES(1,?)').run(JSON.stringify(d));
@@ -189,6 +191,8 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const writeGeo = (d) => db.prepare('INSERT OR REPLACE INTO geo VALUES(1,?)').run(JSON.stringify(d));
   const readSxo = () => ({ ...defaultSxo(), ...JSON.parse(db.prepare('SELECT data FROM sxo WHERE id=1').get()?.data || '{}') });
   const writeSxo = (d) => db.prepare('INSERT OR REPLACE INTO sxo VALUES(1,?)').run(JSON.stringify(d));
+  const readSupervisor = () => ({ ...defaultSupervisor(), ...JSON.parse(db.prepare('SELECT data FROM marketing_supervisor WHERE id=1').get()?.data || '{}') });
+  const writeSupervisor = (d) => db.prepare('INSERT OR REPLACE INTO marketing_supervisor VALUES(1,?)').run(JSON.stringify(d));
   const readBulk = () => ({ ...defaultBulk(), ...JSON.parse(db.prepare('SELECT data FROM bulk_product_audit WHERE id=1').get()?.data || '{}') });
   const writeBulk = (d) => db.prepare('INSERT OR REPLACE INTO bulk_product_audit VALUES(1,?)').run(JSON.stringify(d));
   const bulkState = () => {
