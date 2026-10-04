@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {createOptimizer} from '../optimizer.mjs';
+import {createOptimizer, canonicalSearchTaskKey, dedupeOptimizerTasks, selectMasterSearchConsoleReport, MASTER_SEARCH_CONSOLE_PROPERTY} from '../optimizer.mjs';
 
 const googleEnv={
   APP_ORIGIN:'https://marketing.rohitveterinary.com',
@@ -17,6 +17,26 @@ function fixture(env={},fetchImpl=async()=>({ok:false,json:async()=>({})})){
  const call=async(path,{data={},role='owner',method='POST',url}={})=>{const requestUrl=url||'/api/'+path;const routePath=new URL(requestUrl,'https://test.local').pathname;const res={headers:{},writeHead(status,headers={}){this.status=status;this.headers=headers;},end(){this.ended=true;}};await api.route({method,data,url:requestUrl},res,routePath,role);return res;};
  return {api,db,call};
 }
+
+test('Search Console master property and cross-property task deduplication are stable',()=>{
+ assert.equal(MASTER_SEARCH_CONSOLE_PROPERTY,'sc-domain:rohitveterinary.com');
+ assert.equal(
+   canonicalSearchTaskKey('  ANRONIL   BOLUS ','https://mart.rohitveterinary.com/product/anronil-bolus#buy'),
+   canonicalSearchTaskKey('anronil bolus','https://mart.rohitveterinary.com/product/anronil-bolus')
+ );
+ const reports=[
+   {id:'prefix-new',property:'https://www.rohitveterinary.com/',period:'28d',receivedAt:'2026-10-04T10:00:00Z'},
+   {id:'master',property:'sc-domain:rohitveterinary.com',period:'28d',receivedAt:'2026-10-03T10:00:00Z'},
+ ];
+ assert.equal(selectMasterSearchConsoleReport(reports).id,'master');
+ const tasks=dedupeOptimizerTasks([
+   {id:'prefix',kind:'Search Console',url:'https://mart.rohitveterinary.com/product/anronil-bolus',status:'review',createdAt:'2026-10-04T10:00:00Z',searchConsole:{property:'https://www.rohitveterinary.com/',query:'ANRONIL BOLUS'}},
+   {id:'master',kind:'Search Console',url:'https://mart.rohitveterinary.com/product/anronil-bolus#buy',status:'review',createdAt:'2026-10-03T10:00:00Z',searchConsole:{property:'sc-domain:rohitveterinary.com',query:'anronil bolus'}},
+   {id:'other',kind:'SEO',url:'https://rohitveterinary.com/',status:'review'},
+ ]);
+ assert.equal(tasks.length,2);
+ assert.equal(tasks.find(t=>t.kind==='Search Console').id,'master');
+});
 
 test('tasks deduplicate, enforce owner and approval, retain decision history',async()=>{
  const f=fixture();await assert.rejects(f.call('optimizer/prepare',{role:'staff'}),{status:403});
@@ -44,7 +64,7 @@ test('OAuth connect validates one-time state, stores encrypted refresh token and
  await assert.rejects(f.call('auth/google/callback',{method:'GET',url:'/api/auth/google/callback?state=bad&code=12345678901'}),{status:400});
  const callback=await f.call('auth/google/callback',{method:'GET',url:'/api/auth/google/callback?state='+encodeURIComponent(state)+'&code=valid-code-12345'});
  assert.equal(callback.status,303);assert.equal(callback.headers.Location,'https://marketing.rohitveterinary.com/?gsc=connected');
- const stateView=f.api.state().searchConsole;assert.equal(stateView.connected,true);assert.deepEqual(stateView.properties,['sc-domain:rohitveterinary.com','https://mart.rohitveterinary.com/']);
+ const stateView=f.api.state().searchConsole;assert.equal(stateView.connected,true);assert.deepEqual(stateView.properties,['sc-domain:rohitveterinary.com','https://mart.rohitveterinary.com/']);assert.equal(stateView.masterProperty,'sc-domain:rohitveterinary.com');
  assert.ok(!JSON.stringify(f.api.state()).includes('refresh-secret'));
  const stored=f.db.prepare('SELECT data FROM optimizer_google WHERE id=1').get().data;assert.ok(!stored.includes('refresh-secret'));assert.match(stored,/v1\./);
  assert.equal(requests.length,2);f.db.close();
