@@ -202,15 +202,18 @@ export function createOptimizer({db,env,audit,json,body,fail,fetchImpl=fetch}) {
         const seo=JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data||'{}');
         const existing=tasks();let added=0;
         const classify=label=>{
-          if(['Main heading'].includes(label))return 'AEO';
-          if(['Structured data','Readable page content','Phone in page text'].includes(label))return 'AEO/GEO';
+          if(['Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity'].includes(label))return 'SXO';
+          if(['Main heading'].includes(label))return 'AEO/SXO';
+          if(['Structured data'].includes(label))return 'AEO/GEO';
+          if(['Readable page content','Phone in page text'].includes(label))return 'AEO/GEO/SXO';
+          if(['Image alt attributes'].includes(label))return 'SEO/SXO';
           if(['Canonical link'].includes(label))return 'SEO/GEO';
           return 'SEO';
         };
         for(const scan of seo.scans||[])for(const check of scan.checks.filter(c=>!c.passed)){
           const kind=classify(check.label),key=kind+'|'+scan.url+'|'+check.label;if(existing.some(t=>t.key===key))continue;
           if(existing.length+added>=300)break;
-          const t={id:randomUUID(),key,kind,title:check.label,url:scan.url,evidence:check.observed,recommendation:check.action,priority:['Page response','Indexing directive','Page title','Structured data'].includes(check.label)?'High':'Medium',status:'review',createdAt:new Date().toISOString(),history:[]};save(t);added++;
+          const t={id:randomUUID(),key,kind,title:check.label,url:scan.url,evidence:check.observed,recommendation:check.action,priority:['Page response','Indexing directive','Page title','Structured data','Primary action','Product price clarity','Product availability clarity'].includes(check.label)?'High':'Medium',status:'review',createdAt:new Date().toISOString(),history:[]};save(t);added++;
         }
         audit('optimizer_tasks_prepared');json(res,200,{added});return true;
       }
