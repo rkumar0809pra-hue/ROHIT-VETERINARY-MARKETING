@@ -236,7 +236,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const saveOptimizerTask=t=>db.prepare('INSERT OR REPLACE INTO optimizer_tasks VALUES(?,?)').run(t.id,JSON.stringify(t));
   const supervisorView=()=>{
     const cfg=readSupervisor(),optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState});
-    return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours};
+    return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours,masterProperty:optimizerState.searchConsole?.masterProperty||null};
   };
   const supervisorTask=(signal)=>{
     const key='supervisor|'+signal.key,existing=optimizerTasks().find(t=>t.key===key);
