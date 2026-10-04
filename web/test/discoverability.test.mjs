@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../server.mjs";
-import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots, hasBulkSxoAudit } from "../discoverability.mjs";
+import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots, hasBulkSxoAudit, buildSupervisorSignals } from "../discoverability.mjs";
 import { analysePage } from "../website-scan.mjs";
 import { discoverPage } from "../public/discoverability-ui.js";
 
@@ -92,6 +92,31 @@ test("legacy bulk products without SXO are not treated as fully audited", () => 
   assert.equal(hasBulkSxoAudit({readiness:{sxo:{passed:0,total:0,ready:false}}}),false);
 });
 
+test("automation supervisor identifies stale search data and unresolved bulk work", () => {
+  const now=Date.parse("2026-10-04T12:00:00.000Z");
+  const result=buildSupervisorSignals({
+    nowMs:now,
+    bulk:{
+      drift:{detectedAt:"2026-10-04T08:00:00.000Z"},
+      summary:{driftAdded:2,driftRemoved:1,driftUnresolved:1,pending:3,failed:1,needsSxo:4,needsReview:2}
+    },
+    optimizerState:{
+      searchConsole:{connected:true},
+      reports:[{id:"r1",receivedAt:"2026-09-30T12:00:00.000Z"}],
+      tasks:[{status:"review"},{status:"completed"}],
+    }
+  });
+  assert.equal(result.openTasks,1);
+  assert.ok(result.reportAgeHours>72);
+  const keys=result.signals.map(x=>x.key);
+  assert.ok(keys.includes("gsc-stale|r1"));
+  assert.ok(keys.includes("catalogue-drift|2026-10-04T08:00:00.000Z"));
+  assert.ok(keys.includes("bulk-pending"));
+  assert.ok(keys.includes("bulk-failed"));
+  assert.ok(keys.includes("bulk-sxo"));
+  assert.ok(keys.includes("bulk-review"));
+});
+
 test("Search Console product priority distinguishes exact and query-name matches", () => {
   const report={queryPages:[
     {query:"mastina ptm bolus price",page:"https://mart.rohitveterinary.com/catalog?problem=mastitis",impressions:96,clicks:1,ctr:.0104,position:7.1},
@@ -129,6 +154,23 @@ test("SXO scan signals detect mobile, action, navigation, price and availability
   for(const label of ["Mobile viewport","Primary action","Internal navigation","Product price clarity","Product availability clarity"])assert.equal(byLabel.get(label)?.passed,true,label);
   const bulk=classifyBulkScan(scan);
   assert.equal(bulk.readiness.sxo.ready,true);
+});
+
+test("automation supervisor is enabled by default and can run or pause without publishing", async (t) => {
+  const f=await fixture(t);
+  assert.equal((await f.login()).status,200);
+  let s=(await f.req("state")).data;
+  assert.equal(s.supervisor.enabled,true);
+  assert.equal(s.supervisor.intervalHours,6);
+  let r=await f.req("discover/supervisor/run","POST",{});
+  assert.equal(r.status,200);
+  assert.ok(r.data.lastRunAt);
+  assert.ok(r.data.nextRunAt);
+  r=await f.req("discover/supervisor","PATCH",{enabled:false});
+  assert.equal(r.status,200);
+  assert.equal(r.data.enabled,false);
+  s=(await f.req("state")).data;
+  assert.equal(s.supervisor.enabled,false);
 });
 
 test("SEO/AIO state defaults and checklist item validation", async (t) => {

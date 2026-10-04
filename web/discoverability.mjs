@@ -43,6 +43,28 @@ export const SXO_CHECKLIST = [
 ];
 
 export const PRODUCT_SITEMAP_URL = 'https://app.rohitveterinary.com/api/store/sitemap.xml';
+export const SUPERVISOR_INTERVAL_HOURS = 6;
+
+export function buildSupervisorSignals({bulk,optimizerState,nowMs=Date.now()}) {
+  const summary=bulk?.summary||{};
+  const latestReport=optimizerState?.reports?.[0]||null;
+  const latestAt=latestReport?.receivedAt?Date.parse(latestReport.receivedAt):NaN;
+  const reportAgeHours=Number.isFinite(latestAt)?Math.max(0,(nowMs-latestAt)/3600000):null;
+  const tasks=Array.isArray(optimizerState?.tasks)?optimizerState.tasks:[];
+  const openTasks=tasks.filter(t=>['review','approved'].includes(t.status)).length;
+  const signals=[];
+  if(optimizerState?.searchConsole?.connected && (reportAgeHours===null || reportAgeHours>72)) {
+    signals.push({key:`gsc-stale|${latestReport?.id||'none'}`,priority:'High',title:'Refresh Google Search Console data',evidence:reportAgeHours===null?'No saved Search Console report.':`Latest saved report is ${Math.floor(reportAgeHours)} hours old.`,recommendation:'Refresh the 28-day Search Console report so product priorities and query-to-page opportunities use current data.'});
+  }
+  if((summary.driftAdded||0)||(summary.driftRemoved||0)) {
+    signals.push({key:`catalogue-drift|${bulk?.drift?.detectedAt||'current'}`,priority:(summary.driftUnresolved||0)>0?'High':'Medium',title:'Review Vet Mart catalogue drift',evidence:`${summary.driftAdded||0} new/renamed URLs · ${summary.driftRemoved||0} removed/old URLs · ${summary.driftUnresolved||0} unresolved.`,recommendation:(summary.driftUnresolved||0)>0?'Audit unresolved new/renamed product URLs before treating the catalogue as fully current.':'Catalogue drift is resolved in the HTML audit; retain the record for review and confirm no old links require redirects.'});
+  }
+  if((summary.pending||0)>0) signals.push({key:'bulk-pending',priority:'High',title:'Complete pending Vet Mart audits',evidence:`${summary.pending} product URLs are pending.`,recommendation:'Run controlled bulk audit batches until Pending reaches 0.'});
+  if((summary.failed||0)>0) signals.push({key:'bulk-failed',priority:'High',title:'Retry failed Vet Mart scans',evidence:`${summary.failed} product scans failed.`,recommendation:'Retry the failed public-page scans and investigate any URL that continues to fail.'});
+  if((summary.needsSxo||0)>0) signals.push({key:'bulk-sxo',priority:'High',title:'Complete missing SXO audits',evidence:`${summary.needsSxo} product URLs do not yet have a current SXO audit.`,recommendation:'Run the missing-SXO audit until every current canonical product has an SXO score.'});
+  if((summary.needsReview||0)>0) signals.push({key:'bulk-review',priority:'High',title:'Review Vet Mart optimization failures',evidence:`${summary.needsReview} products need SEO/AEO/GEO/SXO review.`,recommendation:'Open Products needing improvement, create tasks only for genuine failures, then verify after any site change.'});
+  return {signals,latestReport,reportAgeHours,openTasks};
+}
 
 const xmlText = (value) => String(value || '')
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
@@ -152,12 +174,14 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS sxo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE IF NOT EXISTS marketing_supervisor(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS bulk_product_audit(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
 
   const defaultSeo = () => ({ domains: [], brand: '', checklist: {}, keywords: [], scans: [] });
   const defaultAio = () => ({ checklist: {}, queries: [] });
   const defaultGeo = () => ({ checklist: {} });
   const defaultSxo = () => ({ checklist: {} });
+  const defaultSupervisor = () => ({ enabled:true, intervalHours:SUPERVISOR_INTERVAL_HOURS, lastRunAt:null, nextRunAt:null, lastSummary:null, lastError:null });
   const defaultBulk = () => ({ sitemapUrl: PRODUCT_SITEMAP_URL, refreshedAt: null, products: [], drift: { detectedAt: null, baselineRefreshedAt: null, added: [], removed: [] } });
   const readSeo = () => ({ ...defaultSeo(), ...JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data || '{}') });
   const writeSeo = (d) => db.prepare('INSERT OR REPLACE INTO seo VALUES(1,?)').run(JSON.stringify(d));
@@ -167,6 +191,8 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const writeGeo = (d) => db.prepare('INSERT OR REPLACE INTO geo VALUES(1,?)').run(JSON.stringify(d));
   const readSxo = () => ({ ...defaultSxo(), ...JSON.parse(db.prepare('SELECT data FROM sxo WHERE id=1').get()?.data || '{}') });
   const writeSxo = (d) => db.prepare('INSERT OR REPLACE INTO sxo VALUES(1,?)').run(JSON.stringify(d));
+  const readSupervisor = () => ({ ...defaultSupervisor(), ...JSON.parse(db.prepare('SELECT data FROM marketing_supervisor WHERE id=1').get()?.data || '{}') });
+  const writeSupervisor = (d) => db.prepare('INSERT OR REPLACE INTO marketing_supervisor VALUES(1,?)').run(JSON.stringify(d));
   const readBulk = () => ({ ...defaultBulk(), ...JSON.parse(db.prepare('SELECT data FROM bulk_product_audit WHERE id=1').get()?.data || '{}') });
   const writeBulk = (d) => db.prepare('INSERT OR REPLACE INTO bulk_product_audit VALUES(1,?)').run(JSON.stringify(d));
   const bulkState = () => {
@@ -206,6 +232,43 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     geo: new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
     sxo: new Set(['Page response','Main heading','Readable page content','Phone in page text','Image alt attributes','Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity']),
   };
+  const optimizerTasks=()=>db.prepare('SELECT data FROM optimizer_tasks ORDER BY rowid DESC LIMIT 300').all().map(x=>JSON.parse(x.data));
+  const saveOptimizerTask=t=>db.prepare('INSERT OR REPLACE INTO optimizer_tasks VALUES(?,?)').run(t.id,JSON.stringify(t));
+  const supervisorView=()=>{
+    const cfg=readSupervisor(),optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState});
+    return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours};
+  };
+  const supervisorTask=(signal)=>{
+    const key='supervisor|'+signal.key,existing=optimizerTasks().find(t=>t.key===key);
+    if(existing)return false;
+    const t={id:randomUUID(),key,kind:'Automation Supervisor',title:signal.title,url:'',evidence:signal.evidence,recommendation:signal.recommendation,priority:signal.priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true};
+    saveOptimizerTask(t);return true;
+  };
+  const supervise=async({force=false}={})=>{
+    const cfg=readSupervisor(),now=Date.now(),nextAt=cfg.nextRunAt?Date.parse(cfg.nextRunAt):0;
+    if(!cfg.enabled&&!force)return {...supervisorView(),skipped:'paused'};
+    if(!force&&Number.isFinite(nextAt)&&nextAt>now)return {...supervisorView(),skipped:'not-due'};
+    try{
+      const optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState,nowMs:now});
+      let created=0;
+      for(const signal of computed.signals)if(supervisorTask(signal))created++;
+      const report=computed.latestReport;
+      for(const row of (report?.opportunities?.queryLandingOpportunities||[]).slice(0,10)){
+        const key=`gsc|${report.property}|${row.query}|${row.page}`;
+        if(optimizerTasks().some(t=>t.key===key))continue;
+        const priority=row.impressions>=50||row.position<=10?'High':'Medium';
+        saveOptimizerTask({id:randomUUID(),key,kind:'Search Console',title:`Optimize query: ${row.query}`,url:row.page,evidence:`${row.impressions} impressions · ${row.clicks} clicks · ${(row.ctr*100).toFixed(2)}% CTR · average position ${row.position.toFixed(1)} · ${row.subdomain}`,recommendation:row.recommendation,priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true,searchConsole:{reportId:report.id,property:report.property,query:row.query,page:row.page}});created++;
+      }
+      const intervalHours=Math.min(24,Math.max(1,Number(cfg.intervalHours)||SUPERVISOR_INTERVAL_HOURS));
+      const lastRunAt=new Date(now).toISOString(),nextRunAt=new Date(now+intervalHours*3600000).toISOString();
+      const lastSummary={signals:computed.signals.length,tasksCreated:created,bulk:{...bulk.summary},searchConsoleOpportunities:report?.opportunities?.queryLandingOpportunities?.length||0};
+      writeSupervisor({...cfg,enabled:true,intervalHours,lastRunAt,nextRunAt,lastSummary,lastError:null});
+      audit('marketing_supervisor_ran');return supervisorView();
+    }catch(err){
+      writeSupervisor({...cfg,lastRunAt:new Date(now).toISOString(),nextRunAt:new Date(now+SUPERVISOR_INTERVAL_HOURS*3600000).toISOString(),lastError:'Supervisor run failed. Review connected services and try again.'});
+      audit('marketing_supervisor_failed');if(force)throw err;return supervisorView();
+    }
+  };
   const readiness = () => {
     const seo=readSeo(),aio=readAio(),geo=readGeo(),sxo=readSxo(),optimizerState=optimizer.state();
     const latestByHost=new Map();
@@ -235,10 +298,22 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     };
   };
   return {
-    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), sxo: readSxo(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, sxoChecklist: SXO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), sxo: readSxo(), supervisor: supervisorView(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, sxoChecklist: SXO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    supervise,
     async route(req, res, path, role) {
       if(await optimizer.route(req,res,path,role))return true;
       const owner = () => { if (role !== 'owner') throw fail(403, 'Only the owner can change this setting.'); };
+
+      if(path === '/api/discover/supervisor/run' && req.method === 'POST') {
+        owner();json(res,200,await supervise({force:true}));return true;
+      }
+      if(path === '/api/discover/supervisor' && req.method === 'PATCH') {
+        owner();const data=await body(req),cfg=readSupervisor();
+        const enabled=typeof data.enabled==='boolean'?data.enabled:cfg.enabled;
+        const intervalHours=data.intervalHours===undefined?cfg.intervalHours:Math.min(24,Math.max(1,Number(data.intervalHours)||SUPERVISOR_INTERVAL_HOURS));
+        const nextRunAt=enabled?(cfg.nextRunAt||new Date(Date.now()+intervalHours*3600000).toISOString()):cfg.nextRunAt;
+        writeSupervisor({...cfg,enabled,intervalHours,nextRunAt});audit(enabled?'marketing_supervisor_enabled':'marketing_supervisor_paused');json(res,200,supervisorView());return true;
+      }
 
       if(path === '/api/discover/bulk-products/start' && req.method === 'POST') {
         owner();quota('bulk product sitemap refresh',10);
