@@ -43,6 +43,28 @@ export const SXO_CHECKLIST = [
 ];
 
 export const PRODUCT_SITEMAP_URL = 'https://app.rohitveterinary.com/api/store/sitemap.xml';
+export const SUPERVISOR_INTERVAL_HOURS = 6;
+
+export function buildSupervisorSignals({bulk,optimizerState,nowMs=Date.now()}) {
+  const summary=bulk?.summary||{};
+  const latestReport=optimizerState?.reports?.[0]||null;
+  const latestAt=latestReport?.receivedAt?Date.parse(latestReport.receivedAt):NaN;
+  const reportAgeHours=Number.isFinite(latestAt)?Math.max(0,(nowMs-latestAt)/3600000):null;
+  const tasks=Array.isArray(optimizerState?.tasks)?optimizerState.tasks:[];
+  const openTasks=tasks.filter(t=>['review','approved'].includes(t.status)).length;
+  const signals=[];
+  if(optimizerState?.searchConsole?.connected && (reportAgeHours===null || reportAgeHours>72)) {
+    signals.push({key:'gsc-stale',priority:'High',title:'Refresh Google Search Console data',evidence:reportAgeHours===null?'No saved Search Console report.':`Latest saved report is ${Math.floor(reportAgeHours)} hours old.`,recommendation:'Refresh the 28-day Search Console report so product priorities and query-to-page opportunities use current data.'});
+  }
+  if((summary.driftAdded||0)||(summary.driftRemoved||0)) {
+    signals.push({key:'catalogue-drift',priority:(summary.driftUnresolved||0)>0?'High':'Medium',title:'Review Vet Mart catalogue drift',evidence:`${summary.driftAdded||0} new/renamed URLs · ${summary.driftRemoved||0} removed/old URLs · ${summary.driftUnresolved||0} unresolved.`,recommendation:(summary.driftUnresolved||0)>0?'Audit unresolved new/renamed product URLs before treating the catalogue as fully current.':'Catalogue drift is resolved in the HTML audit; retain the record for review and confirm no old links require redirects.'});
+  }
+  if((summary.pending||0)>0) signals.push({key:'bulk-pending',priority:'High',title:'Complete pending Vet Mart audits',evidence:`${summary.pending} product URLs are pending.`,recommendation:'Run controlled bulk audit batches until Pending reaches 0.'});
+  if((summary.failed||0)>0) signals.push({key:'bulk-failed',priority:'High',title:'Retry failed Vet Mart scans',evidence:`${summary.failed} product scans failed.`,recommendation:'Retry the failed public-page scans and investigate any URL that continues to fail.'});
+  if((summary.needsSxo||0)>0) signals.push({key:'bulk-sxo',priority:'High',title:'Complete missing SXO audits',evidence:`${summary.needsSxo} product URLs do not yet have a current SXO audit.`,recommendation:'Run the missing-SXO audit until every current canonical product has an SXO score.'});
+  if((summary.needsReview||0)>0) signals.push({key:'bulk-review',priority:'High',title:'Review Vet Mart optimization failures',evidence:`${summary.needsReview} products need SEO/AEO/GEO/SXO review.`,recommendation:'Open Products needing improvement, create tasks only for genuine failures, then verify after any site change.'});
+  return {signals,latestReport,reportAgeHours,openTasks};
+}
 
 const xmlText = (value) => String(value || '')
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
