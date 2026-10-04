@@ -76,6 +76,10 @@ const BULK_GROUPS = {
   sxo:new Set(['Page response','Main heading','Readable page content','Phone in page text','Image alt attributes','Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity']),
 };
 
+export function hasBulkSxoAudit(product) {
+  return Number(product?.readiness?.sxo?.total || 0) > 0;
+}
+
 export function classifyBulkScan(scan) {
   const readiness={};
   for(const [key,labels] of Object.entries(BULK_GROUPS)){
@@ -172,8 +176,9 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     const unresolvedAdded=products.filter(p=>addedSet.has(p.url)&&(p.status!=='done'||p.failures?.length)).length;
     const summary={
       total:products.length,
-      ready:products.filter(p=>p.status==='done'&&p.failures?.length===0).length,
+      ready:products.filter(p=>p.status==='done'&&p.failures?.length===0&&hasBulkSxoAudit(p)).length,
       needsReview:products.filter(p=>p.status==='done'&&p.failures?.length>0).length,
+      needsSxo:products.filter(p=>p.status==='done'&&p.failures?.length===0&&!hasBulkSxoAudit(p)).length,
       pending:products.filter(p=>p.status==='pending').length,
       failed:products.filter(p=>p.status==='failed').length,
       highPriority:products.filter(p=>p.priority==='High').length,
@@ -298,6 +303,29 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
           writeBulk(bulk);
         }
         audit('bulk_product_review_reaudit');const state=bulkState();json(res,200,{scanned:candidates.length,...state.summary});return true;
+      }
+      if(path === '/api/discover/bulk-products/sxo' && req.method === 'POST') {
+        owner();quota('bulk product SXO migration audits',80);
+        const data=await body(req),limit=Math.min(30,Math.max(1,Number.isInteger(data.limit)?data.limit:30));
+        const bulk=readBulk();
+        const candidates=bulk.products.filter(p=>p.status==='done'&&p.failures?.length===0&&!hasBulkSxoAudit(p)).slice(0,limit);
+        if(!candidates.length){json(res,200,{scanned:0,...bulkState().summary});return true;}
+        const concurrency=5;
+        for(let i=0;i<candidates.length;i+=concurrency){
+          const chunk=candidates.slice(i,i+concurrency);
+          const results=await Promise.allSettled(chunk.map(p=>scanImpl({url:p.url,profile:profile()})));
+          results.forEach((result,index)=>{
+            const product=bulk.products.find(p=>p.url===chunk[index].url);if(!product)return;
+            if(result.status==='fulfilled'){
+              const classified=classifyBulkScan(result.value);
+              Object.assign(product,{status:'done',checkedAt:new Date().toISOString(),readiness:classified.readiness,failures:classified.failures,error:null});
+            } else {
+              Object.assign(product,{status:'failed',checkedAt:new Date().toISOString(),error:'Could not run the SXO migration audit for this public product page.',readiness:null});
+            }
+          });
+          writeBulk(bulk);
+        }
+        audit('bulk_product_sxo_migration_audit');const state=bulkState();json(res,200,{scanned:candidates.length,...state.summary});return true;
       }
       if(path === '/api/discover/bulk-products/task' && req.method === 'POST') {
         owner();const data=await body(req),url=requiredText(data.url,1000),product=readBulk().products.find(p=>p.url===url);
