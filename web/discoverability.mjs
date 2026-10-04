@@ -280,6 +280,16 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   };
   const optimizerTasks=()=>db.prepare('SELECT data FROM optimizer_tasks ORDER BY rowid DESC LIMIT 300').all().map(x=>JSON.parse(x.data));
   const saveOptimizerTask=t=>db.prepare('INSERT OR REPLACE INTO optimizer_tasks VALUES(?,?)').run(t.id,JSON.stringify(t));
+  const createBulkProductTask=product=>{
+    if(!product||product.status!=='done'||!product.failures?.length)return {created:false,task:null};
+    const key='bulk-product|'+product.url,existing=optimizerTasks().find(t=>t.key===key);
+    if(existing)return {created:false,task:existing};
+    const labels=product.failures.map(f=>f.label),priority=product.priority==='High'||labels.some(x=>['Page response','Page title','Indexing directive','Structured data','Primary action','Product price clarity','Product availability clarity'].includes(x))?'High':'Medium';
+    const r=product.readiness||{},g=product.gsc;
+    const evidence=`SEO ${r.seo?.passed||0}/${r.seo?.total||0} · AEO ${r.aeo?.passed||0}/${r.aeo?.total||0} · GEO ${r.geo?.passed||0}/${r.geo?.total||0} · SXO ${r.sxo?.passed||0}/${r.sxo?.total||0}${g?` · matched Search Console query "${g.query}" (${g.impressions} impressions, position ${g.position.toFixed(1)})`:''}`;
+    const task={id:randomUUID(),key,kind:'Bulk SEO/AEO/GEO/SXO',title:`Review product: ${product.slug.replace(/-/g,' ')}`,url:product.url,evidence,recommendation:'Review these initial-HTML checks: '+labels.join(', ')+'. Change only what the visible product data supports.',priority,status:'review',createdAt:new Date().toISOString(),history:[],supervisor:true};
+    saveOptimizerTask(task);audit('bulk_product_task_created',task.id);return {created:true,task};
+  };
   const supervisorView=()=>{
     const cfg=readSupervisor(),optimizerState=optimizer.state(),bulk=bulkState(),computed=buildSupervisorSignals({bulk,optimizerState});
     return {...cfg,signals:computed.signals,openTasks:computed.openTasks,latestReportAt:computed.latestReport?.receivedAt||null,reportAgeHours:computed.reportAgeHours,masterProperty:optimizerState.searchConsole?.masterProperty||null};
@@ -421,13 +431,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         owner();const data=await body(req),url=requiredText(data.url,1000),product=readBulk().products.find(p=>p.url===url);
         if(!product)throw fail(404,'Product is not in the current bulk audit.');
         if(product.status!=='done'||!product.failures?.length)throw fail(400,'This product has no saved audit failures to turn into a task.');
-        const key='bulk-product|'+product.url,existing=db.prepare('SELECT data FROM optimizer_tasks').all().map(x=>JSON.parse(x.data)).find(t=>t.key===key);
-        if(existing){json(res,200,{created:false,task:existing});return true;}
-        const labels=product.failures.map(f=>f.label),priority=product.priority==='High'||labels.some(x=>['Page response','Page title','Indexing directive','Structured data'].includes(x))?'High':'Medium';
-        const r=product.readiness||{},g=product.gsc;
-        const evidence=`SEO ${r.seo?.passed||0}/${r.seo?.total||0} · AEO ${r.aeo?.passed||0}/${r.aeo?.total||0} · GEO ${r.geo?.passed||0}/${r.geo?.total||0} · SXO ${r.sxo?.passed||0}/${r.sxo?.total||0}${g?` · matched Search Console query "${g.query}" (${g.impressions} impressions, position ${g.position.toFixed(1)})`:''}`;
-        const task={id:randomUUID(),key,kind:'Bulk SEO/AEO/GEO/SXO',title:`Review product: ${product.slug.replace(/-/g,' ')}`,url:product.url,evidence,recommendation:'Review these initial-HTML checks: '+labels.join(', ')+'. Change only what the visible product data supports.',priority,status:'review',createdAt:new Date().toISOString(),history:[]};
-        db.prepare('INSERT INTO optimizer_tasks VALUES(?,?)').run(task.id,JSON.stringify(task));audit('bulk_product_task_created',task.id);json(res,201,{created:true,task});return true;
+        const result=createBulkProductTask(product);json(res,result.created?201:200,result);return true;
       }
 
       if(path === '/api/discover/scan' && req.method === 'POST') {
