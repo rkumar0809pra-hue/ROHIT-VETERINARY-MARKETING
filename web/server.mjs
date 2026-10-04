@@ -39,7 +39,7 @@ async function body(req, limit = 160000) {
     throw fail(400, "Invalid JSON.");
   }
 }
-export function createApp({ env = process.env, generateImpl = generate, provider, renderAdvertisementImpl, checkImpl, scanImpl, metaFetchImpl } = {}) {
+export function createApp({ env = process.env, generateImpl = generate, provider, renderAdvertisementImpl, checkImpl, scanImpl, sitemapReadImpl, metaFetchImpl } = {}) {
   if (
     !env.ADMIN_PASSWORD ||
     env.ADMIN_PASSWORD.length < 16 ||
@@ -92,7 +92,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
     res.end(JSON.stringify(data));
   };
   const appConnections=createAppConnections({db,env,json,body,fail,audit});
-  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,metaFetchImpl,appConnections});
+  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,sitemapReadImpl,metaFetchImpl,appConnections});
   const files = {
     "/video-options.js": ["video-options.js", "text/javascript"],
     "/devanagari.ttf": ["../assets/NotoSansDevanagari.ttf", "font/ttf"],
