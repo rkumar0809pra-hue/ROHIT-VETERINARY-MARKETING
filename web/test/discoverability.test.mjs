@@ -15,7 +15,7 @@ async function fixture(t, options = {}) {
     DATA_FILE: ":memory:",
     ...options.env,
   };
-  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, sitemapReadImpl:options.sitemapReadImpl||async()=>({status:200,text:'<urlset></urlset>'}), metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
+  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, sitemapReadImpl:options.sitemapReadImpl||(async()=>({status:200,text:'<urlset></urlset>'})), metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise((r) => server.close(r)));
   let cookie = "";
