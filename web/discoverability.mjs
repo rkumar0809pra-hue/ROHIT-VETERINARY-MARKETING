@@ -32,6 +32,16 @@ export const GEO_CHECKLIST = [
   ['crawlable', 'Key answers and product facts are present in crawlable HTML, not only inside private or interactive screens'],
 ];
 
+export const SXO_CHECKLIST = [
+  ['mobile', 'Key clinic and Vet Mart journeys have been checked on a real mobile screen'],
+  ['cwv', 'Core Web Vitals and mobile performance are reviewed in PageSpeed/Search Console'],
+  ['cta', 'Each important page has one obvious next action such as Book, Call, WhatsApp or Add to cart'],
+  ['commerce', 'Product price, stock and availability shown to users match the current source-of-truth data'],
+  ['trust', 'Contact details, policies and trust information are easy to find before a user commits'],
+  ['journey', 'Search, filters, cart and checkout have been tested end-to-end without unnecessary friction'],
+  ['tracking', 'Important conversions are measured so search visits can be tied to enquiries, bookings or sales'],
+];
+
 export const PRODUCT_SITEMAP_URL = 'https://app.rohitveterinary.com/api/store/sitemap.xml';
 
 const xmlText = (value) => String(value || '')
@@ -63,6 +73,7 @@ const BULK_GROUPS = {
   seo:new Set(['Page response','Page title','Search description','Canonical link','Indexing directive','Image alt attributes']),
   aeo:new Set(['Main heading','Readable page content','Structured data','Phone in page text']),
   geo:new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
+  sxo:new Set(['Page response','Main heading','Readable page content','Phone in page text','Image alt attributes','Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity']),
 };
 
 export function classifyBulkScan(scan) {
@@ -136,11 +147,13 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   db.exec(`CREATE TABLE IF NOT EXISTS seo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS aio(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS geo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE IF NOT EXISTS sxo(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS bulk_product_audit(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL DEFAULT '{}');`);
 
   const defaultSeo = () => ({ domains: [], brand: '', checklist: {}, keywords: [], scans: [] });
   const defaultAio = () => ({ checklist: {}, queries: [] });
   const defaultGeo = () => ({ checklist: {} });
+  const defaultSxo = () => ({ checklist: {} });
   const defaultBulk = () => ({ sitemapUrl: PRODUCT_SITEMAP_URL, refreshedAt: null, products: [], drift: { detectedAt: null, baselineRefreshedAt: null, added: [], removed: [] } });
   const readSeo = () => ({ ...defaultSeo(), ...JSON.parse(db.prepare('SELECT data FROM seo WHERE id=1').get()?.data || '{}') });
   const writeSeo = (d) => db.prepare('INSERT OR REPLACE INTO seo VALUES(1,?)').run(JSON.stringify(d));
@@ -148,6 +161,8 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
   const writeAio = (d) => db.prepare('INSERT OR REPLACE INTO aio VALUES(1,?)').run(JSON.stringify(d));
   const readGeo = () => ({ ...defaultGeo(), ...JSON.parse(db.prepare('SELECT data FROM geo WHERE id=1').get()?.data || '{}') });
   const writeGeo = (d) => db.prepare('INSERT OR REPLACE INTO geo VALUES(1,?)').run(JSON.stringify(d));
+  const readSxo = () => ({ ...defaultSxo(), ...JSON.parse(db.prepare('SELECT data FROM sxo WHERE id=1').get()?.data || '{}') });
+  const writeSxo = (d) => db.prepare('INSERT OR REPLACE INTO sxo VALUES(1,?)').run(JSON.stringify(d));
   const readBulk = () => ({ ...defaultBulk(), ...JSON.parse(db.prepare('SELECT data FROM bulk_product_audit WHERE id=1').get()?.data || '{}') });
   const writeBulk = (d) => db.prepare('INSERT OR REPLACE INTO bulk_product_audit VALUES(1,?)').run(JSON.stringify(d));
   const bulkState = () => {
@@ -184,9 +199,10 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     seo: new Set(['Page response','Page title','Search description','Canonical link','Indexing directive','Image alt attributes']),
     aeo: new Set(['Main heading','Readable page content','Structured data','Phone in page text']),
     geo: new Set(['Structured data','Canonical link','Readable page content','Phone in page text']),
+    sxo: new Set(['Page response','Main heading','Readable page content','Phone in page text','Image alt attributes','Mobile viewport','Primary action','Internal navigation','Product price clarity','Product availability clarity']),
   };
   const readiness = () => {
-    const seo=readSeo(),aio=readAio(),geo=readGeo(),optimizerState=optimizer.state();
+    const seo=readSeo(),aio=readAio(),geo=readGeo(),sxo=readSxo(),optimizerState=optimizer.state();
     const latestByHost=new Map();
     for(const scan of seo.scans||[]){
       let host=scan.url;
@@ -204,17 +220,17 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     return {
       pagesScanned:scans.length,
       automated:auto,
-      manual:{seo:manual(SEO_CHECKLIST,seo),aeo:manual(AIO_CHECKLIST,aio),geo:manual(GEO_CHECKLIST,geo)},
+      manual:{seo:manual(SEO_CHECKLIST,seo),aeo:manual(AIO_CHECKLIST,aio),geo:manual(GEO_CHECKLIST,geo),sxo:manual(SXO_CHECKLIST,sxo)},
       searchConsole:{
         connected:Boolean(optimizerState.searchConsole?.connected),
         latestReportAt:latestReport?.receivedAt||null,
         opportunities:latestReport?.opportunities?.queryLandingOpportunities?.length||0,
       },
-      note:'These are RVH internal readiness checks. They are not Google, ChatGPT, Gemini or AI Overview scores and do not predict ranking or citation.',
+      note:'These are RVH internal readiness checks. They are not Google, ChatGPT, Gemini, AI Overview, Core Web Vitals or conversion scores and do not predict ranking, citation or sales.',
     };
   };
   return {
-    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, scanHosts: SCAN_HOSTS }),
+    state: () => ({ optimizer: optimizer.state(), seo: readSeo(), aio: readAio(), geo: readGeo(), sxo: readSxo(), bulkProductAudit: bulkState(), visibility: readiness(), seoChecklist: SEO_CHECKLIST, aioChecklist: AIO_CHECKLIST, geoChecklist: GEO_CHECKLIST, sxoChecklist: SXO_CHECKLIST, scanHosts: SCAN_HOSTS }),
     async route(req, res, path, role) {
       if(await optimizer.route(req,res,path,role))return true;
       const owner = () => { if (role !== 'owner') throw fail(403, 'Only the owner can change this setting.'); };
@@ -291,8 +307,8 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         if(existing){json(res,200,{created:false,task:existing});return true;}
         const labels=product.failures.map(f=>f.label),priority=product.priority==='High'||labels.some(x=>['Page response','Page title','Indexing directive','Structured data'].includes(x))?'High':'Medium';
         const r=product.readiness||{},g=product.gsc;
-        const evidence=`SEO ${r.seo?.passed||0}/${r.seo?.total||0} · AEO ${r.aeo?.passed||0}/${r.aeo?.total||0} · GEO ${r.geo?.passed||0}/${r.geo?.total||0}${g?` · matched Search Console query "${g.query}" (${g.impressions} impressions, position ${g.position.toFixed(1)})`:''}`;
-        const task={id:randomUUID(),key,kind:'Bulk SEO/AEO/GEO',title:`Review product: ${product.slug.replace(/-/g,' ')}`,url:product.url,evidence,recommendation:'Review these initial-HTML checks: '+labels.join(', ')+'. Change only what the visible product data supports.',priority,status:'review',createdAt:new Date().toISOString(),history:[]};
+        const evidence=`SEO ${r.seo?.passed||0}/${r.seo?.total||0} · AEO ${r.aeo?.passed||0}/${r.aeo?.total||0} · GEO ${r.geo?.passed||0}/${r.geo?.total||0} · SXO ${r.sxo?.passed||0}/${r.sxo?.total||0}${g?` · matched Search Console query "${g.query}" (${g.impressions} impressions, position ${g.position.toFixed(1)})`:''}`;
+        const task={id:randomUUID(),key,kind:'Bulk SEO/AEO/GEO/SXO',title:`Review product: ${product.slug.replace(/-/g,' ')}`,url:product.url,evidence,recommendation:'Review these initial-HTML checks: '+labels.join(', ')+'. Change only what the visible product data supports.',priority,status:'review',createdAt:new Date().toISOString(),history:[]};
         db.prepare('INSERT INTO optimizer_tasks VALUES(?,?)').run(task.id,JSON.stringify(task));audit('bulk_product_task_created',task.id);json(res,201,{created:true,task});return true;
       }
 
@@ -305,14 +321,16 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       }
       if(path === '/api/discover/draft' && req.method === 'POST') {
         owner(); const data=await body(req);const topic=requiredText(data.topic,1000);
-        if(!['seo','aio','geo'].includes(data.kind))throw fail(400,'Choose SEO, AEO or GEO.');
+        if(!['seo','aio','geo','sxo'].includes(data.kind))throw fail(400,'Choose SEO, AEO, GEO or SXO.');
         if(!env.OPENAI_API_KEY||!env.OPENAI_MODEL)throw fail(503,'Configure the OpenAI key and model first.');
         quota('website drafts',20);
         const mode=data.kind==='seo'
           ? 'public website page draft with an SEO title, description, H1 and service introduction'
           : data.kind==='geo'
             ? 'AI-readable public page draft with a concise entity summary, direct factual answers, source placeholders for technical claims, clear internal-link suggestions and structured-data notes'
-            : 'clear question-and-answer website draft for answer-engine discoverability';
+            : data.kind==='sxo'
+              ? 'search-experience improvement draft with concise mobile-friendly copy, a clear primary action, trust cues and low-friction next-step wording'
+              : 'clear question-and-answer website draft for answer-engine discoverability';
         const brief=`Create a ${mode} about: ${topic}. Use Hindi with an English title suggestion. Use only confirmed clinic profile facts. Do not invent opening hours, prices, credentials, availability, testimonials or medical treatment instructions. Mark missing facts for owner review. Do not promise search rankings or AI citations. This is a draft, not an instruction to modify a live website.`;
         let content;try {content=await generateImpl({key:env.OPENAI_API_KEY,model:env.OPENAI_MODEL,agent:{id:'content',name:'Website content writer',instruction:'Write accurate public website drafts using only confirmed clinic facts.'},language:'Hindi',brief,metrics:{},profile:profile()});}catch{throw fail(502,'Website draft could not be generated. Check AI configuration and try later.');}
         if(typeof content!=='string'||!content.trim())throw fail(502,'No draft was returned.');
@@ -403,6 +421,17 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
         json(res, 200, geo);
         return true;
       }
+
+      if (path === '/api/sxo/checklist' && req.method === 'PATCH') {
+        const data = await body(req);
+        if (!SXO_CHECKLIST.some(([k]) => k === data.key)) throw fail(400, 'Unknown checklist item.');
+        const sxo = readSxo();
+        sxo.checklist[data.key] = !sxo.checklist[data.key];
+        writeSxo(sxo);
+        json(res, 200, sxo);
+        return true;
+      }
+
       if (path === '/api/aio/queries' && req.method === 'POST') {
         const data = await body(req);
         const query = requiredText(data.query, 300);
