@@ -15,7 +15,7 @@ async function fixture(t, options = {}) {
     DATA_FILE: ":memory:",
     ...options.env,
   };
-  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
+  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, sitemapReadImpl:options.sitemapReadImpl||(async()=>({status:200,text:'<urlset></urlset>'})), metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise((r) => server.close(r)));
   let cookie = "";
@@ -175,6 +175,40 @@ test("automation supervisor is enabled by default and can run or pause without p
   assert.equal(r.data.enabled,false);
   s=(await f.req("state")).data;
   assert.equal(s.supervisor.enabled,false);
+});
+
+test("automation supervisor refreshes sitemap, audits new products and creates only genuine review tasks", async (t) => {
+  const goodChecks=[
+    {label:"Page response",passed:true},{label:"Page title",passed:true},{label:"Search description",passed:true},
+    {label:"Canonical link",passed:true},{label:"Indexing directive",passed:true},{label:"Image alt attributes",passed:true},
+    {label:"Main heading",passed:true},{label:"Readable page content",passed:true},{label:"Structured data",passed:true},
+    {label:"Phone in page text",passed:true},{label:"Mobile viewport",passed:true},{label:"Primary action",passed:true},
+    {label:"Internal navigation",passed:true},{label:"Product price clarity",passed:true},{label:"Product availability clarity",passed:true},
+  ];
+  const urls=[
+    "https://mart.rohitveterinary.com/product/new-good",
+    "https://mart.rohitveterinary.com/product/new-review",
+  ];
+  const f=await fixture(t,{
+    sitemapReadImpl:async()=>({status:200,text:`<urlset>${urls.map(url=>`<url><loc>${url}</loc></url>`).join("")}</urlset>`}),
+    scanImpl:async({url})=>({url,checks:url.endsWith("new-review")?goodChecks.map(x=>x.label==="Main heading"?{...x,passed:false,observed:"Missing",action:"Use one clear main heading."}:x):goodChecks}),
+  });
+  assert.equal((await f.login()).status,200);
+  const r=await f.req("discover/supervisor/run","POST",{});
+  assert.equal(r.status,200);
+  assert.equal(r.data.lastSummary.automatic.sitemapRefreshed,true);
+  assert.equal(r.data.lastSummary.automatic.productsAudited,2);
+  assert.equal(r.data.lastSummary.automatic.productTasksCreated,1);
+  const state=(await f.req("state")).data;
+  assert.equal(state.bulkProductAudit.summary.total,2);
+  assert.equal(state.bulkProductAudit.summary.ready,1);
+  assert.equal(state.bulkProductAudit.summary.needsReview,1);
+  const productTasks=state.optimizer.tasks.filter(x=>x.kind==="Bulk SEO/AEO/GEO/SXO");
+  assert.equal(productTasks.length,1);
+  assert.match(productTasks[0].title,/new review/i);
+  const again=await f.req("discover/supervisor/run","POST",{});
+  assert.equal(again.data.lastSummary.automatic.productsAudited,0);
+  assert.equal((await f.req("state")).data.optimizer.tasks.filter(x=>x.kind==="Bulk SEO/AEO/GEO/SXO").length,1);
 });
 
 test("SEO/AIO state defaults and checklist item validation", async (t) => {

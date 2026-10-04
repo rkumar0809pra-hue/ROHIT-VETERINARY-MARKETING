@@ -102,6 +102,7 @@ test('Search Console sync uses discovered properties, date ranges and returns da
  const task=await f.call('optimizer/search-console-task',{data:{reportId:result.data.id,index:0}});assert.equal(task.status,201);assert.equal(task.data.task.url,'https://mart.rohitveterinary.com/');assert.equal(task.data.task.kind,'Search Console');
  const duplicate=await f.call('optimizer/search-console-task',{data:{reportId:result.data.id,index:0}});assert.equal(duplicate.status,200);assert.equal(duplicate.data.created,false);
  assert.ok(!JSON.stringify(result.data).includes('refresh1'));assert.equal(f.api.state().reports.length,1);
+ const automatic=await f.api.syncMasterSearchConsole('28d');assert.equal(automatic.skipped,null);assert.equal(automatic.report.property,'sc-domain:rohitveterinary.com');assert.equal(f.api.state().reports.length,2);
  const performance=await f.call('search-console/performance?property=sc-domain%3Arohitveterinary.com&period=28d',{method:'GET',url:'/api/search-console/performance?property=sc-domain%3Arohitveterinary.com&period=28d'});
  assert.equal(performance.data.report.metrics.impressions,500);
  const disconnect=await f.call('search-console/disconnect');assert.equal(disconnect.data.connected,false);assert.equal(f.api.state().searchConsole.connected,false);f.db.close();
