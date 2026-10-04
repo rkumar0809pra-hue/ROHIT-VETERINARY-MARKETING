@@ -252,7 +252,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
     const safeLimit=Math.min(20,Math.max(1,Number.isInteger(limit)?limit:AUTO_PRODUCT_AUDIT_LIMIT));
     const bulk=readBulk();
     const candidates=bulk.products.filter(p=>p.status==='pending'||(retryFailed&&p.status==='failed')).slice(0,safeLimit);
-    if(!candidates.length)return {scanned:0,...bulkState().summary};
+    if(!candidates.length)return {scanned:0,auditedUrls:[],...bulkState().summary};
     const concurrency=5;
     for(let i=0;i<candidates.length;i+=concurrency){
       const chunk=candidates.slice(i,i+concurrency);
@@ -269,7 +269,7 @@ export function createDiscoverability({ db, env, audit, json, body, requiredText
       writeBulk(bulk);
     }
     audit('bulk_product_audit_batch');
-    return {scanned:candidates.length,...bulkState().summary};
+    return {scanned:candidates.length,auditedUrls:candidates.map(p=>p.url),...bulkState().summary};
   }
 
   const automaticGroups = {
