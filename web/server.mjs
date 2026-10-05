@@ -1,3 +1,4 @@
+import { createWhatsApp } from "./whatsapp.mjs";
 import { createServer } from "node:http";
 import {
   createHash,
@@ -91,9 +92,12 @@ export function createApp({ env = process.env, generateImpl = generate, provider
     });
     res.end(JSON.stringify(data));
   };
+  const whatsapp=createWhatsApp({db,env,json,body,fail,audit,generateImpl,fetchImpl:metaFetchImpl});
   const appConnections=createAppConnections({db,env,json,body,fail,audit});
   const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,metaFetchImpl,appConnections});
   const files = {
+    "/whatsapp": ["whatsapp.html", "text/html"],
+    "/whatsapp-ui.js": ["whatsapp-ui.js", "text/javascript"],
     "/video-options.js": ["video-options.js", "text/javascript"],
     "/devanagari.ttf": ["../assets/NotoSansDevanagari.ttf", "font/ttf"],
     "/advertisement-ui.js": ["advertisement-ui.js", "text/javascript"],
@@ -132,6 +136,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
         return res.end(readFileSync(join(root, "public", file)));
       }
       if (!path.startsWith("/api/")) throw fail(404, "Not found.");
+      if(await whatsapp.publicRoute(req,res,path))return;
       if(await appConnections.machineRoute(req,res,path))return;
       if (req.method !== "GET" && req.headers.origin !== origin)
         throw fail(403, "Request origin not allowed.");
@@ -173,6 +178,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
       if ((sessions.get(sessionKey)?.expiry || 0) <= Date.now())
         throw fail(401, "Please sign in.");
       const role=sessions.get(sessionKey).role;
+      if(await whatsapp.route(req,res,path,role))return;
       if(await appConnections.route(req,res,path,role))return;
       if(await studio.route(req,res,path,role)) return;
       if (path === "/api/logout" && req.method === "POST") {
