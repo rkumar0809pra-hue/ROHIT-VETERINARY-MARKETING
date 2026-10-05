@@ -556,3 +556,5 @@ fieldset{border:0;padding:0;margin:0;min-width:0}fieldset:disabled{opacity:.65}i
 .nav details{width:100%}.nav summary{padding:14px 20px;cursor:pointer;color:inherit}.nav details button{width:100%}
 .next-step{margin-top:24px}.step-progress{padding:12px 16px;background:#e7efdf;border-radius:8px;font-weight:700}
 #ad-create{scroll-margin-top:24px}details>summary{cursor:pointer}#builder-form details{margin:12px 0}
+
+.whatsapp-inbox{max-width:900px;margin:32px auto;padding:20px}.whatsapp-link{display:block;padding:12px}.whatsapp-card{margin:20px 0;padding:20px;border:1px solid #ccc;border-radius:12px}.whatsapp-reply{width:100%}.whatsapp-card button{margin:8px}
