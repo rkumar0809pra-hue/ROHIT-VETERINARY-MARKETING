@@ -1,6 +1,6 @@
 # RVH WhatsApp Cloud API
 
-Open `/whatsapp` after signing in as the owner. Incoming text messages are stored in the existing persistent SQLite database. ChatGPT creates reviewable reply drafts. The owner edits and explicitly approves each reply. Staff handoff disables sending for that message. No autonomous replies or bulk campaigns are enabled.
+Open **Social & WhatsApp** after signing in as the owner. The legacy `/whatsapp` URL opens the same combined page. The saved RVH business number is **+91 9709095993**. Use **Connect WhatsApp** for setup and **Check business number** to verify the configured Meta number matches it. Incoming text messages are stored in the existing persistent SQLite database. ChatGPT creates reviewable reply drafts. The owner edits and explicitly approves each reply. Staff handoff disables sending for that message. No autonomous replies or bulk campaigns are enabled.
 
 Set server environment variables in the hosting dashboard:
 

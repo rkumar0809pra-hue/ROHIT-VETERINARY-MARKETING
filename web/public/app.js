@@ -2,7 +2,7 @@ import {storyHandoff} from './story-handoff.js';
 import { renderStudio, extraNames, extraIcons, studioInput, studioChange, studioClick, studioSubmit, profileSection, editorExtras, campaignAnalytics, libraryPage } from "/studio-ui.js";
 const app = document.querySelector("#app");
 let state,
-  page = "dashboard",
+  page = new URLSearchParams(location.search).get("page")==="meta"?"meta":"dashboard",
   selected = "content",
   draftId = null,
   menu = false,
@@ -34,7 +34,7 @@ const names = {
   calendar: "Posting calendar",
   analytics: "Results",
   discover: "SEO & AI Visibility",
-  meta: "Facebook & Instagram",
+  meta: "Social & WhatsApp",
   connections: "Connected apps",
   settings: "Settings",
 };
@@ -120,12 +120,12 @@ function list(items) {
 function dashboard() {
  const tasks=[['creator','Write a post','पोस्ट बनाएं','Facebook or Instagram text'],['video','Make a video','वीडियो बनाएं','Guided scenes, clinic photos and narration'],['images','Photos & posters','फोटो और पोस्टर','Upload clinic photos or make a poster'],['whatsapp','WhatsApp text','संदेश बनाएं','Prepare a message to copy and share'],['manager','Plan my week','सप्ताह की योजना','Seven daily drafts for your review'],['chat','Ask for help','AI से पूछें','Ideas, captions and marketing questions']];
  const pending=state.drafts.filter(d=>d.status==='pending').length;
- return `<div class="heading"><div><h1>What would you like to do?</h1><p>Choose one task. Your AI helper is already selected.</p></div></div><div class="grid">${tasks.map(([key,title,hindi,help])=>`<button class="card task-card" data-page="${key}"><h2>${title}</h2><strong>${hindi}</strong><p>${help}</p><span>Start →</span></button>`).join('')}</div><section class="card next-step"><h2>Your next step</h2><p>${pending?`${pending} drafts are waiting for your review.`:'Create something above, then review it in Saved work.'}</p><button class="primary" data-page="${pending?'approvals':'library'}">${pending?'Review drafts':'Open saved work'}</button><p class="note">Posts and WhatsApp messages are shared manually after approval.</p></section><section class="card"><h2>Help more people find your clinic</h2><div class="actions"><button data-page="discover">Check my website</button><button data-page="meta">Connect Facebook & Instagram</button></div></section><div class="section-title"><h2>Recent work</h2><button data-page="library">View all</button></div>${list(state.drafts.slice(0,4))}`;
+ return `<div class="heading"><div><h1>What would you like to do?</h1><p>Choose one task. Your AI helper is already selected.</p></div></div><div class="grid">${tasks.map(([key,title,hindi,help])=>`<button class="card task-card" data-page="${key}"><h2>${title}</h2><strong>${hindi}</strong><p>${help}</p><span>Start →</span></button>`).join('')}</div><section class="card next-step"><h2>Your next step</h2><p>${pending?`${pending} drafts are waiting for your review.`:'Create something above, then review it in Saved work.'}</p><button class="primary" data-page="${pending?'approvals':'library'}">${pending?'Review drafts':'Open saved work'}</button><p class="note">Posts and WhatsApp messages are shared manually after approval.</p></section><section class="card"><h2>Help more people find your clinic</h2><div class="actions"><button data-page="discover">Check my website</button><button data-page="meta">WhatsApp, Facebook & Instagram</button></div></section><div class="section-title"><h2>Recent work</h2><button data-page="library">View all</button></div>${list(state.drafts.slice(0,4))}`;
 }
 function navigation(){
  const link=key=>`<button data-page="${key}" class="${key===page?'active':''}" ${key===page?'aria-current="page"':''}><span>${icons[key]||'•'}</span>${names[key]}</button>`;
- const primary=['dashboard','creator','video','images','whatsapp','approvals','library'];
- const more=['manager','chat','calendar','analytics','discover','meta','connections','agents','settings'];
+ const primary=['dashboard','creator','video','images','whatsapp','meta','approvals','library'];
+ const more=['manager','chat','calendar','analytics','discover','connections','agents','settings'];
  return `<button data-agent="story" class="${page==='agents'&&selected==='story'?'active':''}"><span>✧</span>Story Creator</button>`+primary.map(link).join('')+`<details ${more.includes(page)?'open':''}><summary>More tools</summary>${more.map(link).join('')}</details>`;
 }
 const agentExamples={story:'Gather our establishment details and recommend three promotional stories. Develop the strongest into a 30-second Hindi video storyboard, matching poster, social caption and WhatsApp message. Flag missing or conflicting facts.',strategy:'Plan a week of awareness posts for pet owners in Lohardaga. Ask readers to call for appointment availability.',content:'Write a short Hindi Facebook post introducing our clinic and inviting owners to call.',video:'Write a 30-second Hindi script introducing our clinic, with a phone number at the end.',whatsapp:'Write a short Hindi consultation invitation for opted-in customers, including an opt-out line.',analytics:'Explain the saved campaign results. Identify missing information and suggest three improvements.',review:'Paste the draft to check here. Check the clinic name, phone, clarity and unsupported claims.'};
@@ -177,7 +177,7 @@ function analytics() {
     )}</div><div class="actions"><button class="primary">Save totals</button></div></form><div class="card"><h2>Turn results into a next step</h2><p>The performance analyst uses these saved totals and the reporting context you put in the brief. Missing metrics are never filled with sample results.</p><button data-agent="analytics">Open performance analyst ↗</button><p class="note">Revenue / ad spend is ROAS, not profit or ROI. A dash means the inputs needed for that calculation are unavailable.</p></div></div>`;
 }
 function settings() {
-  return `<div class="heading"><h1>Your workspace</h1></div><div class="split"><div class="card"><h2>Desktop & Android</h2><p>Open this same app address on each device to access the shared workspace.</p><button data-install>Install app</button><p class="install-guide">On desktop, use Chrome or Edge’s install app option.<br>On Android, open in Chrome and choose Install app or Add to Home screen.</p><p class="note">Installation requires HTTPS or localhost. The interface opens offline; signing in, drafts and agents require a connection.</p></div><div class="card"><h2>Connections</h2><p>OpenAI agents: <strong>${state.aiConfigured ? "Configured" : "Setup required"}</strong></p><p>Model: ${esc(state.model || "Not configured")}</p><p>Facebook / Instagram: ${esc(state.metaConnection?.status||"Not checked")}</p><button data-page="meta">Open Meta connections</button><button data-page="discover">SEO & AI Visibility</button><button data-page="connections">Connect clinic, Mart & chatbot</button><p>WhatsApp sending: Not connected</p><p class="note">Server configuration controls API credentials. Never put keys into a campaign brief. Team access is configured below.</p><button data-logout>Sign out</button></div></div>`;
+  return `<div class="heading"><h1>Your workspace</h1></div><div class="split"><div class="card"><h2>Desktop & Android</h2><p>Open this same app address on each device to access the shared workspace.</p><button data-install>Install app</button><p class="install-guide">On desktop, use Chrome or Edge’s install app option.<br>On Android, open in Chrome and choose Install app or Add to Home screen.</p><p class="note">Installation requires HTTPS or localhost. The interface opens offline; signing in, drafts and agents require a connection.</p></div><div class="card"><h2>Connections</h2><p>OpenAI agents: <strong>${state.aiConfigured ? "Configured" : "Setup required"}</strong></p><p>Model: ${esc(state.model || "Not configured")}</p><p>Facebook / Instagram: ${esc(state.metaConnection?.status||"Not checked")}</p><button data-page="meta">Open social connections</button><button data-page="discover">SEO & AI Visibility</button><button data-page="connections">Connect clinic, Mart & chatbot</button><p>WhatsApp: ${esc(state.whatsappConnection?.status||"Not connected")} · ${esc(state.whatsappConnection?.businessNumber||"+919709095993")}</p><p class="note">Server configuration controls API credentials. Never put keys into a campaign brief. Team access is configured below.</p><button data-logout>Sign out</button></div></div>`;
 }
 function render() {
   if (!state) {

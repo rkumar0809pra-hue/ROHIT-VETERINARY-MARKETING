@@ -2,6 +2,13 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export function createWhatsApp({db,env,json,body,fail,audit,generateImpl,fetchImpl=fetch}) {
   db.exec(`CREATE TABLE IF NOT EXISTS whatsapp_inbox(id TEXT PRIMARY KEY,sender TEXT NOT NULL,text TEXT NOT NULL,received_at INTEGER NOT NULL,draft TEXT,status TEXT NOT NULL DEFAULT 'pending',outbound_id TEXT);`);
   const configured=()=>Boolean(env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_APP_SECRET && env.WHATSAPP_VERIFY_TOKEN);
+  db.exec(`CREATE TABLE IF NOT EXISTS whatsapp_connection(id INTEGER PRIMARY KEY CHECK(id=1),business_number TEXT NOT NULL,phone_id TEXT,checked_at TEXT,status TEXT NOT NULL DEFAULT 'Not connected');`);
+  db.prepare('INSERT OR IGNORE INTO whatsapp_connection(id,business_number) VALUES(1,?)').run('+919709095993');
+  const state=(role='owner')=>{
+    const saved=db.prepare('SELECT * FROM whatsapp_connection WHERE id=1').get();
+    const current=saved.phone_id===env.WHATSAPP_PHONE_NUMBER_ID;
+    return {businessNumber:saved.business_number,configured:configured(),sendingConfigured:Boolean(env.WHATSAPP_ACCESS_TOKEN&&env.WHATSAPP_PHONE_NUMBER_ID),aiConfigured:Boolean(env.OPENAI_API_KEY&&env.OPENAI_MODEL),status:current?saved.status:'Not connected',checkedAt:current?saved.checked_at:null,webhook:'/api/whatsapp/webhook',setup:{phoneId:Boolean(env.WHATSAPP_PHONE_NUMBER_ID),accessToken:Boolean(env.WHATSAPP_ACCESS_TOKEN),appSecret:Boolean(env.WHATSAPP_APP_SECRET),verifyToken:Boolean(env.WHATSAPP_VERIFY_TOKEN)},messages:role==='owner'?db.prepare('SELECT * FROM whatsapp_inbox ORDER BY received_at DESC LIMIT 100').all():[]};
+  };
   let generating=false;
   const publicRoute=async(req,res,path)=>{
     if(path!=='/api/whatsapp/webhook')return false;
@@ -40,7 +47,19 @@ export function createWhatsApp({db,env,json,body,fail,audit,generateImpl,fetchIm
     if(!path.startsWith('/api/whatsapp/'))return false;
     if(role!=='owner')throw fail(403,'Owner access required for customer conversations.');
     if(path==='/api/whatsapp/inbox'&&req.method==='GET'){
-      json(res,200,{configured:configured(),sendingConfigured:Boolean(env.WHATSAPP_ACCESS_TOKEN),aiConfigured:Boolean(env.OPENAI_API_KEY&&env.OPENAI_MODEL),webhook:'/api/whatsapp/webhook',messages:db.prepare('SELECT * FROM whatsapp_inbox ORDER BY received_at DESC LIMIT 100').all()});return true;
+      json(res,200,state(role));return true;
+    }
+    if(path==='/api/whatsapp/check'&&req.method==='POST'){
+      if(!env.WHATSAPP_ACCESS_TOKEN||!/^\d+$/.test(env.WHATSAPP_PHONE_NUMBER_ID||''))throw fail(503,'Add the WhatsApp phone number ID and access token in Render first.');
+      const version=env.WHATSAPP_API_VERSION||'v25.0';if(!/^v\d+\.\d+$/.test(version))throw fail(503,'Invalid API version.');
+      db.prepare("UPDATE whatsapp_connection SET status='Not connected',phone_id=?,checked_at=? WHERE id=1").run(env.WHATSAPP_PHONE_NUMBER_ID,new Date().toISOString());
+      const r=await fetchImpl(`https://graph.facebook.com/${version}/${env.WHATSAPP_PHONE_NUMBER_ID}?fields=display_phone_number,verified_name`,{headers:{Authorization:`Bearer ${env.WHATSAPP_ACCESS_TOKEN}`},redirect:'error',signal:AbortSignal.timeout(15000)});
+      if(!r.ok)throw fail(502,`Meta connection check failed (HTTP ${r.status}).`);
+      const result=await r.json();
+      const number=String(result.display_phone_number||'').replace(/\D/g,'');
+      if(number!=='919709095993')throw fail(409,'The Meta phone number does not match your business number +91 9709095993. Select the correct phone number ID.');
+      db.prepare("UPDATE whatsapp_connection SET status='Number verified' WHERE id=1").run();
+      audit('whatsapp_number_checked');json(res,200,state(role));return true;
     }
     const match=/^\/api\/whatsapp\/([^/]+)\/(draft|send|handoff)$/.exec(path);
     if(!match||req.method!=='POST')throw fail(404,'Not found.');
@@ -66,6 +85,7 @@ export function createWhatsApp({db,env,json,body,fail,audit,generateImpl,fetchIm
     if(Date.now()-m.received_at>=24*3600000)throw fail(409,'Reply window expired. Use an approved template through your provider.');
     const version=env.WHATSAPP_API_VERSION||'v25.0';
     if(!/^v\d+\.\d+$/.test(version)||!/^\d+$/.test(env.WHATSAPP_PHONE_NUMBER_ID||''))throw fail(503,'Invalid WhatsApp configuration.');
+    if(state().status!=='Number verified')throw fail(409,'Check the business number in Social & WhatsApp before sending.');
     const claimed=db.prepare("UPDATE whatsapp_inbox SET status='sending',draft=? WHERE id=? AND status IN ('pending','draft')").run(data.text.trim(),id);
     if(!claimed.changes)throw fail(409,'Message is not available for sending.');
     audit('whatsapp_reply_approved',id);
@@ -78,5 +98,5 @@ export function createWhatsApp({db,env,json,body,fail,audit,generateImpl,fetchIm
     return true;
   };
   db.prepare("UPDATE whatsapp_inbox SET status='uncertain' WHERE status='sending'").run();
-  return {publicRoute,route};
+  return {publicRoute,route,state};
 }
