@@ -97,6 +97,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
   const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,sitemapReadImpl,metaFetchImpl,appConnections});
   const files = {
     "/whatsapp": ["whatsapp.html", "text/html"],
+    "/whatsapp-panel.js": ["whatsapp-panel.js", "text/javascript"],
     "/whatsapp-ui.js": ["whatsapp-ui.js", "text/javascript"],
     "/video-options.js": ["video-options.js", "text/javascript"],
     "/devanagari.ttf": ["../assets/NotoSansDevanagari.ttf", "font/ttf"],
@@ -128,6 +129,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
     );
     try {
       const path = new URL(req.url, origin).pathname;
+      if (req.method === "GET" && path === "/whatsapp") {res.writeHead(302,{Location:"/?page=meta"});res.end();return;}
       if (req.method === "GET" && files[path]) {
         const [file, type] = files[path];
         res.writeHead(200, {
@@ -192,6 +194,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
       if (path === "/api/state" && req.method === "GET")
         return json(res, 200, {
           ...studio.state(),
+          whatsappConnection:whatsapp.state(role),
           role,
           rolesConfigured: { staff: Boolean(env.STAFF_PASSWORD), creator: Boolean(env.CREATOR_PASSWORD) },
           agents: agents.map(({ instruction, ...agent }) => agent),
