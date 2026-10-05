@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { defaultProfile, brandInstructions } from './brand.mjs';
 import { mediaProvider, ProviderError } from './media-provider.mjs';
 
-export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl, scanImpl, metaFetchImpl, appConnections }) {
+export function createStudio({ db, env, dbPath, audit, json, body, requiredText, fail, generateImpl, provider, renderAdvertisementImpl, checkImpl, scanImpl, sitemapReadImpl, metaFetchImpl, appConnections }) {
   provider ||= mediaProvider(env);
   db.exec(`CREATE TABLE IF NOT EXISTS profile(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS chat(id TEXT PRIMARY KEY,role TEXT NOT NULL,text TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -74,7 +74,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
     } finally { running.delete(row.id); }
   }
   const ads=createAdvertisements({db,env,profile,provider,generateImpl,body,json,fail,requiredText,audit,quota,room,finish,getMedia,mediaDir,track,isStopped:()=>stopped,renderImpl:renderAdvertisementImpl});
-  const discover=createDiscoverability({db,env,audit,json,body,requiredText,fail,quota,checkImpl,profile,generateImpl,scanImpl});
+  const discover=createDiscoverability({db,env,audit,json,body,requiredText,fail,quota,checkImpl,profile,generateImpl,scanImpl,sitemapReadImpl});
   const metaConnection=createMetaConnection({db,env,audit,json,fail,fetchImpl:metaFetchImpl});
   const timer=setInterval(() => {
     if(stopped) return;
@@ -83,6 +83,7 @@ export function createStudio({ db, env, dbPath, audit, json, body, requiredText,
       else track(poll(row));
     }
     track(ads.tick());
+    track(discover.supervise());
   },15000);
   timer.unref();
   function metadata(data) {

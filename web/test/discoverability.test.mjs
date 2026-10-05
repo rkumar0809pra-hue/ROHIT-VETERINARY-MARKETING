@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../server.mjs";
-import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots } from "../discoverability.mjs";
+import { parseProductSitemap, classifyBulkScan, productSearchPriority, compareProductSitemapSnapshots, hasBulkSxoAudit, buildSupervisorSignals } from "../discoverability.mjs";
+import { analysePage } from "../website-scan.mjs";
+import { discoverPage } from "../public/discoverability-ui.js";
 
 const password = "owner-test-password-long";
 
@@ -13,7 +15,7 @@ async function fixture(t, options = {}) {
     DATA_FILE: ":memory:",
     ...options.env,
   };
-  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
+  const server = createApp({ env, checkImpl: options.checkImpl, scanImpl:options.scanImpl, sitemapReadImpl:options.sitemapReadImpl||(async()=>({status:200,text:'<urlset></urlset>'})), metaFetchImpl:options.metaFetchImpl, generateImpl:options.generateImpl });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   t.after(() => new Promise((r) => server.close(r)));
   let cookie = "";
@@ -80,7 +82,43 @@ test("bulk readiness separates SEO, AEO and GEO and preserves failures", () => {
   assert.equal(result.readiness.seo.ready,true);
   assert.equal(result.readiness.aeo.ready,false);
   assert.equal(result.readiness.geo.ready,false);
+  assert.equal(result.readiness.sxo.ready,false);
   assert.deepEqual(result.failures.map(x=>x.label),["Readable page content"]);
+});
+
+test("legacy bulk products without SXO are not treated as fully audited", () => {
+  assert.equal(hasBulkSxoAudit({readiness:{seo:{total:6},aeo:{total:4},geo:{total:4}}}),false);
+  assert.equal(hasBulkSxoAudit({readiness:{sxo:{passed:10,total:10,ready:true}}}),true);
+  assert.equal(hasBulkSxoAudit({readiness:{sxo:{passed:0,total:0,ready:false}}}),false);
+});
+
+test("automation supervisor identifies stale search data and unresolved bulk work", () => {
+  const now=Date.parse("2026-10-04T12:00:00.000Z");
+  const result=buildSupervisorSignals({
+    nowMs:now,
+    bulk:{
+      drift:{detectedAt:"2026-10-04T08:00:00.000Z"},
+      summary:{driftAdded:2,driftRemoved:1,driftUnresolved:1,pending:3,failed:1,needsSxo:4,needsReview:2}
+    },
+    optimizerState:{
+      searchConsole:{connected:true},
+      reports:[
+        {id:"prefix-fresh",property:"https://www.rohitveterinary.com/",period:"28d",receivedAt:"2026-10-04T10:00:00.000Z"},
+        {id:"r1",property:"sc-domain:rohitveterinary.com",period:"28d",receivedAt:"2026-09-30T12:00:00.000Z"},
+      ],
+      tasks:[{status:"review"},{status:"completed"}],
+    }
+  });
+  assert.equal(result.openTasks,1);
+  assert.equal(result.latestReport.id,"r1");
+  assert.ok(result.reportAgeHours>72);
+  const keys=result.signals.map(x=>x.key);
+  assert.ok(keys.includes("gsc-stale|r1"));
+  assert.ok(keys.includes("catalogue-drift|2026-10-04T08:00:00.000Z"));
+  assert.ok(keys.includes("bulk-pending"));
+  assert.ok(keys.includes("bulk-failed"));
+  assert.ok(keys.includes("bulk-sxo"));
+  assert.ok(keys.includes("bulk-review"));
 });
 
 test("Search Console product priority distinguishes exact and query-name matches", () => {
@@ -100,6 +138,79 @@ test("Search Console product priority distinguishes exact and query-name matches
   assert.equal(unknown.gsc,null);
 });
 
+test("SXO scan signals detect mobile, action, navigation, price and availability on a product page", () => {
+  assert.equal(typeof discoverPage,"function");
+  const html=`<!doctype html><html><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Veterinary product">
+    <title>Test Product — RVH Vet Mart</title>
+    <link rel="canonical" href="https://mart.rohitveterinary.com/product/test-product">
+    <script type="application/ld+json">{"@type":"Product"}</script>
+  </head><body>
+    <h1>Test Product</h1>
+    <p>Useful veterinary product information with enough readable content for a customer to understand the product before ordering. Contact Rohit Veterinary House at 9709095993 for support. Current price ₹100 and 5 in stock.</p>
+    <img src="/test.jpg" alt="Test Product">
+    <a href="/catalog">Related products</a>
+    <button>Add to cart</button>
+  </body></html>`;
+  const scan=analysePage({url:"https://mart.rohitveterinary.com/product/test-product",status:200,headers:{},text:html},{phone:"9709095993"});
+  const byLabel=new Map(scan.checks.map(x=>[x.label,x]));
+  for(const label of ["Mobile viewport","Primary action","Internal navigation","Product price clarity","Product availability clarity"])assert.equal(byLabel.get(label)?.passed,true,label);
+  const bulk=classifyBulkScan(scan);
+  assert.equal(bulk.readiness.sxo.ready,true);
+});
+
+test("automation supervisor is enabled by default and can run or pause without publishing", async (t) => {
+  const f=await fixture(t);
+  assert.equal((await f.login()).status,200);
+  let s=(await f.req("state")).data;
+  assert.equal(s.supervisor.enabled,true);
+  assert.equal(s.supervisor.intervalHours,6);
+  let r=await f.req("discover/supervisor/run","POST",{});
+  assert.equal(r.status,200);
+  assert.ok(r.data.lastRunAt);
+  assert.ok(r.data.nextRunAt);
+  r=await f.req("discover/supervisor","PATCH",{enabled:false});
+  assert.equal(r.status,200);
+  assert.equal(r.data.enabled,false);
+  s=(await f.req("state")).data;
+  assert.equal(s.supervisor.enabled,false);
+});
+
+test("automation supervisor refreshes sitemap, audits new products and creates only genuine review tasks", async (t) => {
+  const goodChecks=[
+    {label:"Page response",passed:true},{label:"Page title",passed:true},{label:"Search description",passed:true},
+    {label:"Canonical link",passed:true},{label:"Indexing directive",passed:true},{label:"Image alt attributes",passed:true},
+    {label:"Main heading",passed:true},{label:"Readable page content",passed:true},{label:"Structured data",passed:true},
+    {label:"Phone in page text",passed:true},{label:"Mobile viewport",passed:true},{label:"Primary action",passed:true},
+    {label:"Internal navigation",passed:true},{label:"Product price clarity",passed:true},{label:"Product availability clarity",passed:true},
+  ];
+  const urls=[
+    "https://mart.rohitveterinary.com/product/new-good",
+    "https://mart.rohitveterinary.com/product/new-review",
+  ];
+  const f=await fixture(t,{
+    sitemapReadImpl:async()=>({status:200,text:`<urlset>${urls.map(url=>`<url><loc>${url}</loc></url>`).join("")}</urlset>`}),
+    scanImpl:async({url})=>({url,checks:url.endsWith("new-review")?goodChecks.map(x=>x.label==="Main heading"?{...x,passed:false,observed:"Missing",action:"Use one clear main heading."}:x):goodChecks}),
+  });
+  assert.equal((await f.login()).status,200);
+  const r=await f.req("discover/supervisor/run","POST",{});
+  assert.equal(r.status,200);
+  assert.equal(r.data.lastSummary.automatic.sitemapRefreshed,true);
+  assert.equal(r.data.lastSummary.automatic.productsAudited,2);
+  assert.equal(r.data.lastSummary.automatic.productTasksCreated,1);
+  const state=(await f.req("state")).data;
+  assert.equal(state.bulkProductAudit.summary.total,2);
+  assert.equal(state.bulkProductAudit.summary.ready,1);
+  assert.equal(state.bulkProductAudit.summary.needsReview,1);
+  const productTasks=state.optimizer.tasks.filter(x=>x.kind==="Bulk SEO/AEO/GEO/SXO");
+  assert.equal(productTasks.length,1);
+  assert.match(productTasks[0].title,/new review/i);
+  const again=await f.req("discover/supervisor/run","POST",{});
+  assert.equal(again.data.lastSummary.automatic.productsAudited,0);
+  assert.equal((await f.req("state")).data.optimizer.tasks.filter(x=>x.kind==="Bulk SEO/AEO/GEO/SXO").length,1);
+});
+
 test("SEO/AIO state defaults and checklist item validation", async (t) => {
   const f = await fixture(t);
   await f.login();
@@ -107,15 +218,19 @@ test("SEO/AIO state defaults and checklist item validation", async (t) => {
   assert.deepEqual(s.seo, { domains: [], brand: "", checklist: {}, keywords: [], scans: [] });
   assert.deepEqual(s.aio, { checklist: {}, queries: [] });
   assert.deepEqual(s.geo, { checklist: {} });
+  assert.deepEqual(s.sxo, { checklist: {} });
   assert.equal(s.bulkProductAudit.summary.total, 0);
   assert.equal(s.bulkProductAudit.sitemapUrl, "https://app.rohitveterinary.com/api/store/sitemap.xml");
   assert.equal(s.bulkProductAudit.summary.driftAdded, 0);
   assert.equal(s.bulkProductAudit.summary.driftRemoved, 0);
   assert.equal(s.bulkProductAudit.summary.driftUnresolved, 0);
+  assert.equal(s.bulkProductAudit.summary.needsSxo, 0);
   assert.equal(s.seoChecklist.length, 8);
   assert.equal(s.aioChecklist.length, 6);
   assert.equal(s.geoChecklist.length, 7);
+  assert.equal(s.sxoChecklist.length, 7);
   assert.equal(s.visibility.manual.geo.total, 7);
+  assert.equal(s.visibility.manual.sxo.total, 7);
   assert.match(s.visibility.note, /not Google/i);
   assert.equal((await f.req("seo/checklist", "PATCH", { key: "not-a-real-key" })).status, 400);
 });
@@ -144,11 +259,15 @@ test("checklist toggles persist and compute independently for SEO and AIO", asyn
   assert.equal(r.data.checklist.qa, true);
   r = await f.req("geo/checklist", "PATCH", { key: "entity" });
   assert.equal(r.data.checklist.entity, true);
+  r = await f.req("sxo/checklist", "PATCH", { key: "cta" });
+  assert.equal(r.data.checklist.cta, true);
   const s = (await f.req("state")).data;
   assert.equal(s.seo.checklist.titles, false);
   assert.equal(s.aio.checklist.qa, true);
   assert.equal(s.geo.checklist.entity, true);
   assert.equal(s.visibility.manual.geo.passed, 1);
+  assert.equal(s.sxo.checklist.cta, true);
+  assert.equal(s.visibility.manual.sxo.passed, 1);
 });
 
 test("keyword add/delete and check requires a configured domain and AI setup", async (t) => {

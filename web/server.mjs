@@ -40,7 +40,7 @@ async function body(req, limit = 160000) {
     throw fail(400, "Invalid JSON.");
   }
 }
-export function createApp({ env = process.env, generateImpl = generate, provider, renderAdvertisementImpl, checkImpl, scanImpl, metaFetchImpl } = {}) {
+export function createApp({ env = process.env, generateImpl = generate, provider, renderAdvertisementImpl, checkImpl, scanImpl, sitemapReadImpl, metaFetchImpl } = {}) {
   if (
     !env.ADMIN_PASSWORD ||
     env.ADMIN_PASSWORD.length < 16 ||
@@ -94,7 +94,7 @@ export function createApp({ env = process.env, generateImpl = generate, provider
   };
   const whatsapp=createWhatsApp({db,env,json,body,fail,audit,generateImpl,fetchImpl:metaFetchImpl});
   const appConnections=createAppConnections({db,env,json,body,fail,audit});
-  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,metaFetchImpl,appConnections});
+  const studio=createStudio({db,env,dbPath,audit,json,body,requiredText,fail,generateImpl,provider,renderAdvertisementImpl,checkImpl,scanImpl,sitemapReadImpl,metaFetchImpl,appConnections});
   const files = {
     "/whatsapp": ["whatsapp.html", "text/html"],
     "/whatsapp-ui.js": ["whatsapp-ui.js", "text/javascript"],
